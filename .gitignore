@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.venv/
+
+# TypeScript
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Go
+go/bin/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

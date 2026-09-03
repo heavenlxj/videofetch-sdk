@@ -1,0 +1,38 @@
+{
+  "name": "@videofetch/sdk",
+  "version": "0.1.0",
+  "description": "Official VideoFetch SDK for TypeScript/JavaScript — video ingestion API (YouTube URL → MP4/MP3 to your storage)",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "sideEffects": false,
+  "engines": { "node": ">=18" },
+  "publishConfig": { "access": "public" },
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/heavenlxj/videofetch-sdks" },
+  "keywords": ["video", "download", "youtube", "api", "sdk", "videofetch"],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "overrides": {
+    "esbuild": "0.21.5"
+  }
+}

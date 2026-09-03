@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "videofetch"
+version = "0.1.0"
+description = "Official VideoFetch SDK for Python — video ingestion API (YouTube URL → MP4/MP3 to your storage)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [{ name = "VideoFetch", email = "dev@videofetch.dev" }]
+keywords = ["video", "download", "youtube", "api", "sdk", "videofetch"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+dependencies = ["httpx>=0.24,<1"]
+
+[project.urls]
+Homepage = "https://github.com/heavenlxj/videofetch-py"
+Documentation = "https://videofetch.dev/docs"
+Source = "https://github.com/heavenlxj/videofetch-py"
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-asyncio>=0.23"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/videofetch"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

@@ -1,0 +1,28 @@
+name: release-go
+
+on:
+  push:
+    tags: ["go-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  test-and-release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - run: go vet ./...
+      - run: go test ./...
+      # proxy.golang.org auto-indexes the tag; the GitHub Release is for humans.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          name: videofetch-go ${{ github.ref_name }}
