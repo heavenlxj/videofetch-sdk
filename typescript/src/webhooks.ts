@@ -14,7 +14,10 @@
  */
 
 import { VideoFetchError } from "./errors";
-import type { WebhookPayload } from "./types";
+import type { VideoFetch } from "./client";
+import type {
+  WebhookEndpoint, WebhookEvent, WebhookList, WebhookPayload, WebhookTestResult,
+} from "./types";
 
 export class SignatureVerificationError extends VideoFetchError {
   name = "SignatureVerificationError";
@@ -54,6 +57,16 @@ export async function constructEvent(
   sigHeader: string | null | undefined,
   secret: string,
 ): Promise<WebhookPayload> {
+  // The signature is computed over the RAW request body. Passing an already
+  // parsed object (e.g. `await req.json()`) loses the exact bytes and would
+  // otherwise crash with a native TypeError inside TextDecoder — surface a
+  // clear, catchable SignatureVerificationError instead.
+  if (typeof payload !== "string" && !(payload instanceof Uint8Array)) {
+    throw new SignatureVerificationError(
+      "Payload must be the raw request body (string or Uint8Array), not a parsed object. " +
+      "Read it as text first, e.g. `await request.text()`.",
+    );
+  }
   if (!sigHeader) {
     throw new SignatureVerificationError("No signature header was present.");
   }
@@ -85,4 +98,47 @@ function timingSafeEqual(a: string, b: string): boolean {
     diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
   }
   return diff === 0;
+}
+
+/**
+ * Account-level webhook endpoint management.
+ *
+ * These endpoints are authenticated by API key (no JWT needed), so a backend
+ * integration can self-provision callbacks:
+ *
+ *   const wh = await client.webhooks.create("https://example.com/hook"); // secret shown once
+ *   await client.webhooks.list();                                        // secret is masked
+ *   await client.webhooks.test(wh.id);                                   // ping + verify
+ *   await client.webhooks.delete(wh.id);                                 // 204
+ */
+export class WebhooksResource {
+  constructor(private client: VideoFetch) {}
+
+  /**
+   * POST /v1/webhooks — register an endpoint. Returns the FULL plaintext
+   * `secret` (this is the only time it is ever returned; store it now).
+   * `events` defaults to every event on the server side.
+   */
+  async create(url: string, events?: WebhookEvent[]): Promise<WebhookEndpoint> {
+    const body: Record<string, unknown> = { url };
+    if (events && events.length > 0) body.events = events;
+    return this.client.request<WebhookEndpoint>("POST", "/v1/webhooks", { json: body });
+  }
+
+  /** GET /v1/webhooks — list endpoints; each `secret` is masked. */
+  async list(): Promise<WebhookList> {
+    return this.client.request<WebhookList>("GET", "/v1/webhooks");
+  }
+
+  /** POST /v1/webhooks/{id}/test — send a `webhook.test` ping to the endpoint. */
+  async test(id: string): Promise<WebhookTestResult> {
+    return this.client.request<WebhookTestResult>(
+      "POST", `/v1/webhooks/${encodeURIComponent(id)}/test`,
+    );
+  }
+
+  /** DELETE /v1/webhooks/{id} — 204 No Content. */
+  async delete(id: string): Promise<void> {
+    await this.client.request("DELETE", `/v1/webhooks/${encodeURIComponent(id)}`);
+  }
 }

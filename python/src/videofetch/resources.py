@@ -13,9 +13,40 @@ from typing import Optional
 
 from .client import DEFAULT_JOB_TIMEOUT, _poll_delay
 from .errors import JobFailedError, VideoFetchError
-from .models import Download, DownloadList, TrimSpec, VideoInfo
+from .models import (
+    Download,
+    DownloadList,
+    TrimSpec,
+    Usage,
+    UsageAlerts,
+    VideoInfo,
+    WebhookEndpoint,
+    WebhookList,
+    WebhookTestResult,
+)
 
 TERMINAL = ("completed", "failed", "deleted")
+
+
+def _build_trim(trim: Optional[TrimSpec], trim_start: Optional[float],
+                trim_end: Optional[float]) -> Optional[dict]:
+    """Normalize `trim{start,end}` and the flat `trim_start`/`trim_end` aliases.
+
+    Both spellings are accepted but must not conflict: passing a TrimSpec plus a
+    flat value that disagrees raises ValueError (we never silently pick one).
+    """
+    if trim is not None and (trim_start is not None or trim_end is not None):
+        same = ((trim_start is None or trim_start == trim.start)
+                and (trim_end is None or trim_end == trim.end))
+        if not same:
+            raise ValueError(
+                "use either trim{start,end} or trim_start/trim_end, not conflicting values")
+        return trim.to_dict()
+    if trim_start is not None or trim_end is not None:
+        if trim_start is None or trim_end is None:
+            raise ValueError("trim_start and trim_end must be provided together")
+        return {"start": trim_start, "end": trim_end}
+    return trim.to_dict() if trim else None
 
 
 # ────────────────────────── Sync resources ───────────────────────
@@ -25,12 +56,19 @@ class DownloadsResource:
 
     def create(self, url: str, format: str = "720p", *,
                trim: Optional[TrimSpec] = None,
+               trim_start: Optional[float] = None,
+               trim_end: Optional[float] = None,
                destination: Optional[dict] = None,
                webhook_url: Optional[str] = None,
                **extra: dict) -> DownloadJob:
-        """Create a download job. Returns immediately with status 'queued'."""
+        """Create a download job. Returns immediately with status 'queued'.
+
+        Clip window may be given either as ``trim=TrimSpec(start, end)`` or via
+        the flat aliases ``trim_start`` / ``trim_end``. The two spellings are
+        mutually exclusive in value — a conflict raises ValueError.
+        """
         body: dict = {"url": url, "format": format, **extra}
-        t = trim.to_dict() if trim else None
+        t = _build_trim(trim, trim_start, trim_end)
         if t:
             body["trim"] = t
         if destination:
@@ -150,11 +188,13 @@ class AsyncDownloadsResource:
 
     async def create(self, url: str, format: str = "720p", *,
                      trim: Optional[TrimSpec] = None,
+                     trim_start: Optional[float] = None,
+                     trim_end: Optional[float] = None,
                      destination: Optional[dict] = None,
                      webhook_url: Optional[str] = None,
                      **extra: dict) -> AsyncDownloadJob:
         body: dict = {"url": url, "format": format, **extra}
-        t = trim.to_dict() if trim else None
+        t = _build_trim(trim, trim_start, trim_end)
         if t:
             body["trim"] = t
         if destination:
@@ -259,3 +299,88 @@ class AsyncInfoResource:
     async def lookup(self, url: str) -> VideoInfo:
         data = await self._client.request("POST", "/v1/info", json_body={"url": url})
         return VideoInfo.from_dict(data)
+
+
+# ────────────────────────── Usage resource (v0.2.0) ──────────────────────────
+class UsageResource:
+    """Account quota, alert state and concurrency snapshot (GET /v1/usage)."""
+
+    def __init__(self, client):
+        self._client = client
+
+    def get(self) -> Usage:
+        """Current usage/quota snapshot, including alert_level + concurrency_limit."""
+        return Usage.from_dict(self._client.request("GET", "/v1/usage"))
+
+    def alerts(self) -> UsageAlerts:
+        """Real-time alert state + this month's fired alerts + thresholds/topup amounts."""
+        return UsageAlerts.from_dict(self._client.request("GET", "/v1/usage/alerts"))
+
+
+class AsyncUsageResource:
+    def __init__(self, client):
+        self._client = client
+
+    async def get(self) -> Usage:
+        return Usage.from_dict(await self._client.request("GET", "/v1/usage"))
+
+    async def alerts(self) -> UsageAlerts:
+        return UsageAlerts.from_dict(await self._client.request("GET", "/v1/usage/alerts"))
+
+
+# ────────────────────────── Webhooks resource (v0.2.0) ───────────────────────
+class WebhooksResource:
+    """Account-level webhook endpoints (API key or JWT); requires httpx only.
+
+    create() is the only call that returns the FULL plaintext signing secret.
+    """
+
+    def __init__(self, client):
+        self._client = client
+
+    def create(self, url: str, events: Optional[list] = None) -> WebhookEndpoint:
+        """Register an endpoint. Omit `events` to subscribe to all events.
+
+        The returned `secret` is the full plaintext signing secret and is shown
+        only once — persist it to verify deliveries.
+        """
+        body: dict = {"url": url}
+        if events is not None:
+            body["events"] = list(events)
+        data = self._client.request("POST", "/v1/webhooks", json_body=body)
+        return WebhookEndpoint.from_dict(data)
+
+    def list(self) -> WebhookList:
+        """List endpoints (secrets are masked)."""
+        return WebhookList.from_dict(self._client.request("GET", "/v1/webhooks"))
+
+    def delete(self, webhook_id: str) -> None:
+        """Delete an endpoint (204 No Content)."""
+        self._client.request("DELETE", f"/v1/webhooks/{webhook_id}")
+
+    def test(self, webhook_id: str) -> WebhookTestResult:
+        """Send a one-shot `webhook.test` ping to the endpoint and report the result."""
+        data = self._client.request("POST", f"/v1/webhooks/{webhook_id}/test")
+        return WebhookTestResult.from_dict(data)
+
+
+class AsyncWebhooksResource:
+    def __init__(self, client):
+        self._client = client
+
+    async def create(self, url: str, events: Optional[list] = None) -> WebhookEndpoint:
+        body: dict = {"url": url}
+        if events is not None:
+            body["events"] = list(events)
+        data = await self._client.request("POST", "/v1/webhooks", json_body=body)
+        return WebhookEndpoint.from_dict(data)
+
+    async def list(self) -> WebhookList:
+        return WebhookList.from_dict(await self._client.request("GET", "/v1/webhooks"))
+
+    async def delete(self, webhook_id: str) -> None:
+        await self._client.request("DELETE", f"/v1/webhooks/{webhook_id}")
+
+    async def test(self, webhook_id: str) -> WebhookTestResult:
+        data = await self._client.request("POST", f"/v1/webhooks/{webhook_id}/test")
+        return WebhookTestResult.from_dict(data)

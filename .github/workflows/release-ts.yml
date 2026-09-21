@@ -1,11 +1,18 @@
 name: release-ts
 
+# Two-phase auth model (npm 2026 policy):
+#   • Trusted publishing (OIDC) is the long-term path — 2FA-bypass tokens will
+#     lose direct-publish ability (~Jan 2027), and cannot do account/package
+#     management since ~Aug 2026.
+#   • For the FIRST release (package doesn't exist yet on npmjs.com, so a trusted
+#     publisher cannot be configured) an NPM_TOKEN fallback is still needed.
+#   The npm CLI auto-detects OIDC first, then falls back to NODE_AUTH_TOKEN.
 on:
   push:
     tags: ["ts-v*"]
 
 permissions:
-  id-token: write
+  id-token: write      # required for OIDC trusted publishing + provenance
   contents: read
 
 jobs:
@@ -18,15 +25,29 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.14"          # trusted publishing requires Node >= 22.14
           registry-url: "https://registry.npmjs.org"
-          cache: npm
-          cache-dependency-path: typescript/package-lock.json
+      # Trusted publishing requires npm CLI >= 11.5.1. Pin to 11.x on purpose:
+      # npm v12 turns on install-time script restrictions (esbuild's postinstall
+      # would be skipped), and v11.16+ only warns.
+      - run: npm install -g "npm@^11.6"
+      - run: npm --version
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Publish to npm
+      - name: Auth diagnostics
+        run: |
+          echo "registry: $(npm config get registry)"
+          echo "NPM_TOKEN secret configured: ${{ secrets.NPM_TOKEN != '' }}"
+          npm whoami || echo "(whoami failed — no valid token identity)"
+          npm org ls videofetch || echo "(org @videofetch not visible to this identity)"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish to npm (OIDC first, token fallback)
         run: npm publish --provenance --access public
         env:
+          # Only used when no trusted publisher is configured (e.g. first release).
+          # Once the package exists: npmjs.com → package → Settings → Trusted Publisher
+          # → GitHub Actions (owner/repo/workflow). After that this secret can be deleted.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

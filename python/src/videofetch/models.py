@@ -18,6 +18,10 @@ def _as_int(v: Any) -> Optional[int]:
     return int(v) if v is not None else None
 
 
+def _as_str(v: Any) -> Optional[str]:
+    return None if v is None else str(v)
+
+
 @dataclass
 class TrimSpec:
     """Requested clip window in seconds (float). end must be > start."""
@@ -170,4 +174,190 @@ class VideoInfo:
                 quality=f.get("quality", ""), size=_as_int(f.get("size")),
                 container=f.get("container", "MP4"), note=f.get("note"),
             ) for f in (d.get("formats") or [])],
+        )
+
+
+# ────────────────────────── Usage / Alerts (v0.2.0) ──────────────────────────
+@dataclass
+class Usage:
+    """GET /v1/usage — account quota snapshot + live alert level + concurrency.
+
+    `used_bytes`/`used_gb` are this key's lifetime usage; `account_used_*_month`
+    is the account-wide current-month billable usage (the quota is account-level).
+    """
+    key_id: str = ""
+    plan: str = "free"
+    quota_gb: Optional[float] = None
+    used_bytes: int = 0
+    used_gb: float = 0.0
+    remaining_gb: Optional[float] = None
+    payg_balance_cents: int = 0
+    payg_rate_usd_per_gb: float = 0.5
+    account_used_bytes_month: int = 0
+    account_used_gb_month: float = 0.0
+    used_pct: float = 0.0
+    month: str = ""
+    active_jobs: int = 0
+    concurrency_limit: int = 0
+    alert_level: str = "ok"          # ok | warning | critical | exceeded
+    alert_message: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Usage":
+        return cls(
+            key_id=str(d.get("key_id", "")), plan=d.get("plan", "free"),
+            quota_gb=_as_float(d.get("quota_gb")),
+            used_bytes=int(d.get("used_bytes") or 0),
+            used_gb=float(d.get("used_gb") or 0.0),
+            remaining_gb=_as_float(d.get("remaining_gb")),
+            payg_balance_cents=int(d.get("payg_balance_cents") or 0),
+            payg_rate_usd_per_gb=float(d.get("payg_rate_usd_per_gb") or 0.0),
+            account_used_bytes_month=int(d.get("account_used_bytes_month") or 0),
+            account_used_gb_month=float(d.get("account_used_gb_month") or 0.0),
+            used_pct=float(d.get("used_pct") or 0.0),
+            month=d.get("month", ""), active_jobs=int(d.get("active_jobs") or 0),
+            concurrency_limit=int(d.get("concurrency_limit") or 0),
+            alert_level=d.get("alert_level", "ok"), alert_message=d.get("alert_message", ""),
+        )
+
+
+@dataclass
+class AlertState:
+    """Real-time alert state (GET /v1/usage/alerts → `state`)."""
+    level: str = "ok"                # ok | warning | critical | exceeded
+    pct_used: float = 0.0
+    thresholds: list[int] = field(default_factory=list)
+    crossed: list[int] = field(default_factory=list)
+    next_threshold_pct: Optional[int] = None
+    quota_gb: float = 0.0
+    used_gb_month: float = 0.0
+    remaining_gb: Optional[float] = None
+    month: str = ""
+    plan: str = "free"
+    payg_balance_cents: int = 0
+    balance_low: bool = False
+    balance_depleted: bool = False
+    balance_hint: Optional[str] = None
+    message: str = ""
+    action: Optional[str] = None     # topup | upgrade | None
+
+    @classmethod
+    def from_dict(cls, d: Optional[dict]) -> "AlertState":
+        d = d or {}
+        return cls(
+            level=d.get("level", "ok"), pct_used=float(d.get("pct_used") or 0.0),
+            thresholds=[int(t) for t in (d.get("thresholds") or [])],
+            crossed=[int(t) for t in (d.get("crossed") or [])],
+            next_threshold_pct=_as_int(d.get("next_threshold_pct")),
+            quota_gb=float(d.get("quota_gb") or 0.0),
+            used_gb_month=float(d.get("used_gb_month") or 0.0),
+            remaining_gb=_as_float(d.get("remaining_gb")), month=d.get("month", ""),
+            plan=d.get("plan", "free"),
+            payg_balance_cents=int(d.get("payg_balance_cents") or 0),
+            balance_low=bool(d.get("balance_low")), balance_depleted=bool(d.get("balance_depleted")),
+            balance_hint=d.get("balance_hint"), message=d.get("message", ""),
+            action=d.get("action"),
+        )
+
+
+@dataclass
+class AlertEvent:
+    """A fired alert record (deduped per month/threshold/kind)."""
+    id: str = ""
+    kind: str = ""
+    level: str = "warning"
+    threshold: int = 0
+    pct_used: float = 0.0
+    used_gb: float = 0.0
+    quota_gb: float = 0.0
+    balance_cents: int = 0
+    message: str = ""
+    delivered: bool = False
+    created_at: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "AlertEvent":
+        return cls(
+            id=str(d.get("id", "")), kind=d.get("kind", ""), level=d.get("level", "warning"),
+            threshold=int(d.get("threshold") or 0), pct_used=float(d.get("pct_used") or 0.0),
+            used_gb=float(d.get("used_gb") or 0.0), quota_gb=float(d.get("quota_gb") or 0.0),
+            balance_cents=int(d.get("balance_cents") or 0), message=d.get("message", ""),
+            delivered=bool(d.get("delivered")),
+            created_at=_as_str(d.get("created_at")),
+        )
+
+
+@dataclass
+class UsageAlerts:
+    """GET /v1/usage/alerts result."""
+    state: AlertState = field(default_factory=AlertState)
+    fired: list[AlertEvent] = field(default_factory=list)
+    thresholds: list[int] = field(default_factory=list)
+    topup_amounts: list[int] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "UsageAlerts":
+        return cls(
+            state=AlertState.from_dict(d.get("state")),
+            fired=[AlertEvent.from_dict(e) for e in (d.get("fired") or [])],
+            thresholds=[int(t) for t in (d.get("thresholds") or [])],
+            topup_amounts=[int(a) for a in (d.get("topup_amounts") or [])],
+        )
+
+
+# ────────────────────────── Webhook endpoints (v0.2.0) ───────────────────────
+@dataclass
+class WebhookEndpoint:
+    """A registered webhook endpoint.
+
+    `secret` is the FULL plaintext signing secret returned by create() — it is
+    shown only once. list() returns masked secrets (e.g. `whsec_abc****abcd`).
+    """
+    id: str = ""
+    url: str = ""
+    secret: str = ""
+    events: list[str] = field(default_factory=list)
+    active: bool = True
+    last_delivery_at: Optional[str] = None
+    last_status: Optional[int] = None
+    failure_count: int = 0
+    created_at: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "WebhookEndpoint":
+        return cls(
+            id=str(d.get("id", "")), url=d.get("url", ""), secret=d.get("secret", ""),
+            events=list(d.get("events") or []), active=bool(d.get("active", True)),
+            last_delivery_at=_as_str(d.get("last_delivery_at")),
+            last_status=_as_int(d.get("last_status")),
+            failure_count=int(d.get("failure_count") or 0),
+            created_at=_as_str(d.get("created_at")),
+        )
+
+
+@dataclass
+class WebhookList:
+    items: list[WebhookEndpoint] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "WebhookList":
+        return cls(items=[WebhookEndpoint.from_dict(w) for w in (d.get("items") or [])])
+
+
+@dataclass
+class WebhookTestResult:
+    """POST /v1/webhooks/{id}/test — one-shot ping delivery result."""
+    delivered: bool = False
+    url: str = ""
+    last_status: Optional[int] = None
+    signature_header: str = ""
+    signature_format: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "WebhookTestResult":
+        return cls(
+            delivered=bool(d.get("delivered")), url=d.get("url", ""),
+            last_status=_as_int(d.get("last_status")),
+            signature_header=d.get("signature_header", ""),
+            signature_format=d.get("signature_format", ""),
         )

@@ -27,4 +27,26 @@ describe("webhook verification", () => {
     await expect(constructEvent(EVENT, null, SECRET)).rejects.toBeInstanceOf(SignatureVerificationError);
     await expect(constructEvent(EVENT, "nope", SECRET)).rejects.toBeInstanceOf(SignatureVerificationError);
   });
+
+  it("rejects an already-parsed object with SignatureVerificationError (not a TypeError)", async () => {
+    const sig = await computeSignature(EVENT, SECRET);
+    const parsed = JSON.parse(EVENT);
+    let caught: unknown;
+    try {
+      // @ts-expect-error — deliberately passing the wrong runtime type
+      await constructEvent(parsed, sig, SECRET);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(SignatureVerificationError);
+    expect(caught).not.toBeInstanceOf(TypeError);
+    expect((caught as Error).message).toMatch(/raw request body/i);
+  });
+
+  it("verifies quota.* / balance.low events too", async () => {
+    const body = JSON.stringify({ event: "quota.exceeded", alert_kind: "usage_threshold", level: "exceeded", threshold_pct: 100 });
+    const sig = await computeSignature(body, SECRET);
+    const out = await constructEvent(body, sig, SECRET);
+    expect(out.event).toBe("quota.exceeded");
+  });
 });

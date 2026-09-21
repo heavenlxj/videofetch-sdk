@@ -17,6 +17,7 @@ export { VideoFetch, DEFAULT_BASE_URL } from "./client";
 export type { VideoFetchOptions } from "./client";
 export { DownloadJob, DownloadsResource, DEFAULT_JOB_TIMEOUT_MS } from "./downloads";
 export { InfoResource } from "./info";
+export { UsageResource } from "./usage";
 export {
   VideoFetchError,
   AuthenticationError,
@@ -28,6 +29,11 @@ export {
   ApiError,
   JobFailedError,
 } from "./errors";
-export { computeSignature, constructEvent, SignatureVerificationError } from "./webhooks";
+export {
+  computeSignature,
+  constructEvent,
+  SignatureVerificationError,
+  WebhooksResource,
+} from "./webhooks";
 
 export * from "./types";

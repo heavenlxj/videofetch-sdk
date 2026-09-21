@@ -109,7 +109,48 @@ export type WebhookEvent =
   | "download.queued"
   | "download.processing"
   | "download.completed"
-  | "download.failed";
+  | "download.failed"
+  | "quota.warning"
+  | "quota.exceeded"
+  | "balance.low";
+
+/** All events the account-level webhook endpoints can subscribe to. */
+export const WEBHOOK_EVENTS: WebhookEvent[] = [
+  "download.queued",
+  "download.processing",
+  "download.completed",
+  "download.failed",
+  "quota.warning",
+  "quota.exceeded",
+  "balance.low",
+];
+
+/** A registered account-level webhook endpoint (GET/POST /v1/webhooks). */
+export interface WebhookEndpoint {
+  id: string;
+  url: string;
+  /** Full plaintext secret on create only; masked (`whsec_…****`) on list. */
+  secret: string;
+  events: WebhookEvent[];
+  active: boolean;
+  last_delivery_at?: string | null;
+  last_status?: number | null;
+  failure_count?: number;
+  created_at?: string | null;
+}
+
+export interface WebhookList {
+  items: WebhookEndpoint[];
+}
+
+/** Result of POST /v1/webhooks/{id}/test. */
+export interface WebhookTestResult {
+  delivered: boolean;
+  url: string;
+  last_status?: number | null;
+  signature_header: string;
+  signature_format: string;
+}
 
 export interface WebhookPayload {
   event: WebhookEvent;
@@ -131,4 +172,76 @@ export const SUPPORTED_FORMATS: DownloadFormat[] = [
 
 export function isTerminal(status: string): boolean {
   return status === "completed" || status === "failed" || status === "deleted";
+}
+
+// ────────────────────────── Usage / alerts (v0.2.0) ──────────────────────────
+
+export type AlertLevel = "ok" | "warning" | "critical" | "exceeded";
+
+/** GET /v1/usage — account-level quota snapshot + concurrency + alert level. */
+export interface Usage {
+  key_id: string;
+  plan: string;
+  quota_gb: number | null;
+  /** cumulative bytes for this API key (materialized cache) */
+  used_bytes: number;
+  used_gb: number;
+  remaining_gb: number | null;
+  payg_balance_cents: number;
+  payg_rate_usd_per_gb: number;
+  /** month-to-date bytes for the whole account (matches /v1/stats/overview) */
+  account_used_bytes_month: number;
+  account_used_gb_month: number;
+  used_pct: number;
+  month: string;
+  active_jobs: number;
+  concurrency_limit: number;
+  alert_level: AlertLevel;
+  alert_message: string;
+}
+
+/** Live alert state returned inside GET /v1/usage/alerts. */
+export interface UsageAlertState {
+  level: AlertLevel;
+  pct_used: number;
+  thresholds: number[];
+  crossed: number[];
+  next_threshold_pct: number | null;
+  quota_gb: number;
+  used_gb_month: number;
+  remaining_gb: number | null;
+  month: string;
+  plan: string;
+  payg_balance_cents: number;
+  balance_low: boolean;
+  balance_depleted: boolean;
+  balance_hint: string | null;
+  message: string;
+  /** `topup` | `upgrade` | null — drives the dashboard call-to-action button */
+  action: string | null;
+}
+
+/** A fired alert record (deduped: one per threshold per month). */
+export interface UsageAlertEvent {
+  id: string;
+  kind: string;
+  level: string;
+  threshold: number;
+  pct_used: number;
+  used_gb: number;
+  quota_gb: number;
+  balance_cents: number;
+  message: string;
+  delivered: boolean;
+  created_at: string;
+}
+
+/** GET /v1/usage/alerts. */
+export interface UsageAlerts {
+  state: UsageAlertState;
+  fired: UsageAlertEvent[];
+  /** e.g. [80, 95, 100] */
+  thresholds: number[];
+  /** top-up presets in USD, e.g. [10, 25, 50, 100] */
+  topup_amounts: number[];
 }

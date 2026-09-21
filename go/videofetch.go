@@ -40,6 +40,8 @@ type Client struct {
 
 	Downloads *DownloadsService
 	Info      *InfoService
+	Usage     *UsageService
+	Webhooks  *WebhooksService
 }
 
 // ClientOptions tune the client. Zero values fall back to defaults.
@@ -84,6 +86,8 @@ func NewClient(apiKey string, opts *ClientOptions) *Client {
 	c := &Client{apiKey: apiKey, baseURL: base, httpClient: hc, maxRetries: retries}
 	c.Downloads = &DownloadsService{client: c}
 	c.Info = &InfoService{client: c}
+	c.Usage = &UsageService{client: c}
+	c.Webhooks = &WebhooksService{client: c}
 	return c
 }
 
@@ -103,8 +107,43 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("videofetch: HTTP %d: %s", e.StatusCode, e.Message)
 }
 
+// PermissionDeniedError is returned for HTTP 403. Inspect Code to distinguish a
+// plain permission error from an administrative suspension
+// (code "account_suspended").
+type PermissionDeniedError struct{ APIError }
+
+// Unwrap exposes the embedded *APIError so errors.As(err, &apiErr) works too.
+func (e *PermissionDeniedError) Unwrap() error { return &e.APIError }
+
+// RateLimitError is returned for HTTP 429 — the account/platform concurrency
+// guard. Code is one of "concurrency_limit_exceeded", "queue_limit_exceeded" or
+// "platform_at_capacity"; Limit/Active/Scope describe the cap that was hit and
+// RetryAfter is the server's Retry-After hint in seconds (0 if absent).
+type RateLimitError struct {
+	APIError
+	Limit      int
+	Active     int
+	Scope      string
+	RetryAfter int
+}
+
+func (e *RateLimitError) Error() string {
+	return fmt.Sprintf("videofetch: rate limited: %s (code=%s limit=%d active=%d scope=%s retry_after=%ds)",
+		e.Message, e.Code, e.Limit, e.Active, e.Scope, e.RetryAfter)
+}
+
+// Unwrap exposes the embedded *APIError so errors.As(err, &apiErr) works too.
+func (e *RateLimitError) Unwrap() error { return &e.APIError }
+
 // QuotaExceededError is returned when the monthly quota is exhausted (HTTP 402).
-type QuotaExceededError struct{ APIError }
+// RemainingGB mirrors the "remaining_gb" field the server includes (nil if absent).
+type QuotaExceededError struct {
+	APIError
+	RemainingGB *float64
+}
+
+// Unwrap exposes the embedded *APIError so errors.As(err, &apiErr) works too.
+func (e *QuotaExceededError) Unwrap() error { return &e.APIError }
 
 // JobFailedError is returned by Wait when the job reached a failed terminal
 // state. Failed downloads are never charged.
@@ -143,7 +182,7 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 		}
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "videofetch-go/0.1.0")
+		req.Header.Set("User-Agent", "videofetch-go/0.2.0")
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
@@ -162,13 +201,17 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 			if attempt < c.maxRetries {
-				time.Sleep(retryDelay(attempt))
+				if d, ok := retryAfterDelay(resp.Header); ok {
+					time.Sleep(d)
+				} else {
+					time.Sleep(retryDelay(attempt))
+				}
 				continue
 			}
 		}
 
 		if resp.StatusCode >= 400 {
-			return mapError(resp.StatusCode, bodyBytes)
+			return mapError(resp.StatusCode, bodyBytes, resp.Header)
 		}
 		if len(bodyBytes) == 0 || out == nil {
 			return nil
@@ -178,37 +221,90 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 	return lastErr
 }
 
-func mapError(status int, body []byte) error {
+type errorDetail struct {
+	Code        string   `json:"code"`
+	Type        string   `json:"type"`
+	Message     string   `json:"message"`
+	Msg         string   `json:"msg"`
+	Param       string   `json:"param"`
+	RemainingGB *float64 `json:"remaining_gb"`
+	Limit       int      `json:"limit"`
+	Active      int      `json:"active"`
+	Scope       string   `json:"scope"`
+}
+
+func mapError(status int, body []byte, hdr http.Header) error {
 	apiErr := &APIError{StatusCode: status, RawBody: string(body)}
-	// Server wraps business errors in {"detail": {...}}
+	var d errorDetail
+	// Server wraps business errors in {"detail": {...}} (or {"detail": "..."}).
 	var wrapped struct {
 		Detail json.RawMessage `json:"detail"`
 	}
-	if json.Unmarshal(body, &wrapped) == nil && len(wrapped.Detail) > 0 && wrapped.Detail[0] != '"' {
-		var d struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-			Param   string `json:"param"`
-		}
-		if json.Unmarshal(wrapped.Detail, &d) == nil {
-			apiErr.Code, apiErr.Message, apiErr.Param = d.Code, d.Message, d.Param
+	if json.Unmarshal(body, &wrapped) == nil && len(wrapped.Detail) > 0 {
+		if wrapped.Detail[0] == '"' {
+			var msg string
+			if json.Unmarshal(wrapped.Detail, &msg) == nil {
+				apiErr.Message = msg
+			}
+		} else {
+			_ = json.Unmarshal(wrapped.Detail, &d)
 		}
 	} else {
-		var plain struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		}
-		if json.Unmarshal(body, &plain) == nil && plain.Message != "" {
-			apiErr.Code, apiErr.Message = plain.Code, plain.Message
-		}
+		_ = json.Unmarshal(body, &d)
 	}
+	apiErr.Code = d.Code
+	if apiErr.Code == "" {
+		apiErr.Code = d.Type
+	}
+	if apiErr.Message == "" {
+		apiErr.Message = d.Message
+	}
+	if apiErr.Message == "" {
+		apiErr.Message = d.Msg
+	}
+	apiErr.Param = d.Param
 	if apiErr.Message == "" {
 		apiErr.Message = fmt.Sprintf("unexpected HTTP %d", status)
 	}
-	if status == http.StatusPaymentRequired {
-		return &QuotaExceededError{APIError: *apiErr}
+
+	switch status {
+	case http.StatusPaymentRequired:
+		return &QuotaExceededError{APIError: *apiErr, RemainingGB: d.RemainingGB}
+	case http.StatusForbidden:
+		// e.g. code "account_suspended" — inspect .Code.
+		return &PermissionDeniedError{APIError: *apiErr}
+	case http.StatusTooManyRequests:
+		limit, active := d.Limit, d.Active
+		if v := atoi(hdr.Get("X-Concurrency-Limit")); v != 0 && limit == 0 {
+			limit = v
+		}
+		if v := atoi(hdr.Get("X-Concurrency-Active")); v != 0 && active == 0 {
+			active = v
+		}
+		return &RateLimitError{
+			APIError: *apiErr, Limit: limit, Active: active,
+			Scope: d.Scope, RetryAfter: atoi(hdr.Get("Retry-After")),
+		}
 	}
 	return apiErr
+}
+
+// retryAfterDelay returns the Retry-After hint as a Duration, capped at 30s.
+// Returns ok=false when the header is absent/invalid so callers fall back to backoff.
+func retryAfterDelay(hdr http.Header) (time.Duration, bool) {
+	raw := hdr.Get("Retry-After")
+	if raw == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	d := time.Duration(n) * time.Second
+	if d > 30*time.Second {
+		d = 30 * time.Second
+	}
+	return d, true
 }
 
 func retryDelay(attempt int) time.Duration {

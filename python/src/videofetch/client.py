@@ -54,6 +54,8 @@ class VideoFetch:
 
     downloads: "DownloadsResource"
     info: "InfoResource"
+    usage: "UsageResource"
+    webhooks: "WebhooksResource"
 
     def __init__(self, api_key: Optional[str] = None, *, base_url: str = DEFAULT_BASE_URL,
                  timeout: float = DEFAULT_TIMEOUT, max_retries: int = DEFAULT_MAX_RETRIES,
@@ -73,9 +75,11 @@ class VideoFetch:
             trust_env=False,
         )
         # lazy import avoids circular dependency (resources imports client)
-        from .resources import DownloadsResource, InfoResource
+        from .resources import DownloadsResource, InfoResource, UsageResource, WebhooksResource
         self.downloads = DownloadsResource(self)
         self.info = InfoResource(self)
+        self.usage = UsageResource(self)
+        self.webhooks = WebhooksResource(self)
 
     def request(self, method: str, path: str, *, json_body: Optional[dict] = None,
                 params: Optional[dict] = None) -> Any:
@@ -96,7 +100,7 @@ class VideoFetch:
                     continue
             if resp.status_code >= 400:
                 body = _parse_body(resp)
-                raise map_error(resp.status_code, body)
+                raise map_error(resp.status_code, body, headers=resp.headers)
             if resp.status_code == 204:
                 return None
             return _parse_body(resp)
@@ -120,6 +124,8 @@ class AsyncVideoFetch:
 
     downloads: "AsyncDownloadsResource"
     info: "AsyncInfoResource"
+    usage: "AsyncUsageResource"
+    webhooks: "AsyncWebhooksResource"
 
     def __init__(self, api_key: Optional[str] = None, *, base_url: str = DEFAULT_BASE_URL,
                  timeout: float = DEFAULT_TIMEOUT, max_retries: int = DEFAULT_MAX_RETRIES,
@@ -134,9 +140,16 @@ class AsyncVideoFetch:
             timeout=timeout, follow_redirects=True,
             trust_env=False,
         )
-        from .resources import AsyncDownloadsResource, AsyncInfoResource
+        from .resources import (
+            AsyncDownloadsResource,
+            AsyncInfoResource,
+            AsyncUsageResource,
+            AsyncWebhooksResource,
+        )
         self.downloads = AsyncDownloadsResource(self)
         self.info = AsyncInfoResource(self)
+        self.usage = AsyncUsageResource(self)
+        self.webhooks = AsyncWebhooksResource(self)
 
     async def request(self, method: str, path: str, *, json_body: Optional[dict] = None,
                       params: Optional[dict] = None) -> Any:
@@ -158,7 +171,7 @@ class AsyncVideoFetch:
                     continue
             if resp.status_code >= 400:
                 body = _parse_body(resp)
-                raise map_error(resp.status_code, body)
+                raise map_error(resp.status_code, body, headers=resp.headers)
             if resp.status_code == 204:
                 return None
             return _parse_body(resp)

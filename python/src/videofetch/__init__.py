@@ -6,6 +6,14 @@
     result = job.wait()          # polls until completed/failed
     print(result.download_url)   # presigned 7-day link (url destination)
 
+Usage & alerts (v0.2.0):
+    usage = client.usage.get()               # quota_gb, used_pct, alert_level, ...
+    alerts = client.usage.alerts()           # state + fired[] + thresholds
+
+Webhook endpoints (v0.2.0):
+    ep = client.webhooks.create("https://acme.dev/hooks/vf")   # ep.secret shown once
+    client.webhooks.list(); client.webhooks.test(ep.id); client.webhooks.delete(ep.id)
+
 Async:
     from videofetch.asyncio import AsyncVideoFetch
     async with AsyncVideoFetch(api_key="...") as client:
@@ -23,19 +31,46 @@ from .errors import (  # noqa: F401
     AuthenticationError,
     JobFailedError,
     NotFoundError,
+    PermissionDeniedError,
     QuotaExceededError,
     RateLimitError,
     ValidationError,
     VideoFetchError,
 )
-from .models import Download, DownloadAttempt, DownloadList, FormatInfo, TrimSpec, VideoInfo  # noqa: F401
+from .models import (  # noqa: F401
+    AlertEvent,
+    AlertState,
+    Download,
+    DownloadAttempt,
+    DownloadList,
+    FormatInfo,
+    TrimSpec,
+    Usage,
+    UsageAlerts,
+    VideoInfo,
+    WebhookEndpoint,
+    WebhookList,
+    WebhookTestResult,
+)
 from .resources import DownloadJob  # noqa: F401
+from .webhooks import (  # noqa: F401
+    WEBHOOK_EVENTS,
+    SignatureVerificationError,
+    compute_signature,
+    construct_event,
+    verify_webhook_signature,
+)
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     "VideoFetch", "AsyncVideoFetch", "DownloadJob",
-    "VideoFetchError", "AuthenticationError", "QuotaExceededError", "ValidationError",
-    "NotFoundError", "RateLimitError", "ApiError", "JobFailedError",
+    "VideoFetchError", "AuthenticationError", "PermissionDeniedError", "QuotaExceededError",
+    "ValidationError", "NotFoundError", "RateLimitError", "ApiError", "JobFailedError",
     "Download", "DownloadList", "DownloadAttempt", "TrimSpec", "FormatInfo", "VideoInfo",
+    # v0.2.0
+    "Usage", "UsageAlerts", "AlertState", "AlertEvent",
+    "WebhookEndpoint", "WebhookList", "WebhookTestResult",
+    "WEBHOOK_EVENTS", "SignatureVerificationError",
+    "compute_signature", "construct_event", "verify_webhook_signature",
     "__version__",
 ]

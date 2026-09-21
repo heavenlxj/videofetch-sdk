@@ -98,3 +98,56 @@ go vet ./...
 ## License
 
 MIT
+
+
+## Usage, alerts and credits
+
+```go
+u, _ := client.Usage.Get(ctx)
+*u.QuotaGB            // account plan quota this month (GB)
+u.UsedPct             // % consumed
+u.RemainingGB         // remaining GB before overage
+u.ActiveJobs          // queued + processing on your account
+u.ConcurrencyLimit    // max in-flight jobs per account
+u.AlertLevel          // ok | warning | critical | exceeded
+u.PaygBalanceCents    // pay-as-you-go credit
+
+a, _ := client.Usage.Alerts(ctx)
+a.State.Level               // ok | warning | critical | exceeded
+a.State.Crossed             // thresholds already crossed, e.g. [80 95]
+a.State.Action              // "topup" | "upgrade" | nil
+a.Thresholds                // [80 95 100]
+a.TopupAmounts              // [10 25 50 100]
+a.Fired                     // alerts delivered this month
+```
+
+Alert webhook events: `quota.warning` (80%/95%), `quota.exceeded` (100%),
+`balance.low` (credit nearly gone). Each threshold fires at most once per month.
+
+## Managing webhook endpoints with your API key
+
+```go
+wh, err := client.Webhooks.Create(ctx, "https://api.yourapp.com/hook",
+    videofetch.EventCompleted, videofetch.EventQuotaExceeded, videofetch.EventBalanceLow)
+wh.Secret   // whsec_... — FULL value, only returned by Create. Store it now.
+
+lst, _ := client.Webhooks.List(ctx)      // secrets are masked
+res, _ := client.Webhooks.Test(ctx, wh.ID) // ping; res.Delivered, res.LastStatus
+err = client.Webhooks.Delete(ctx, wh.ID)
+
+ev, err := videofetch.VerifyWebhookSignature(rawBody, r.Header.Get("X-VideoFetch-Signature"), wh.Secret)
+// err is ErrBadSignature when the raw body and signature disagree.
+```
+
+## Concurrency limits and 429s
+
+```go
+job, err := client.Downloads.Create(ctx, videofetch.DownloadCreateParams{URL: url, Format: videofetch.Format1080p})
+var rl *videofetch.RateLimitError
+if errors.As(err, &rl) {
+    rl.Code       // concurrency_limit_exceeded | queue_limit_exceeded | platform_at_capacity
+    rl.Limit; rl.Active; rl.Scope; rl.RetryAfter
+}
+```
+
+A suspended account returns a typed permission error with `code=account_suspended`.

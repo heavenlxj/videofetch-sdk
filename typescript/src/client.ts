@@ -6,6 +6,8 @@
 import { mapError, VideoFetchError } from "./errors";
 import { DownloadsResource } from "./downloads";
 import { InfoResource } from "./info";
+import { UsageResource } from "./usage";
+import { WebhooksResource } from "./webhooks";
 
 export const DEFAULT_BASE_URL =
   (typeof process !== "undefined" && process.env?.VIDEOFETCH_BASE_URL) || "https://api.vidfetch.dev";
@@ -44,6 +46,8 @@ export class VideoFetch {
 
   downloads: DownloadsResource;
   info: InfoResource;
+  usage: UsageResource;
+  webhooks: WebhooksResource;
 
   constructor(options: VideoFetchOptions = {}) {
     this.apiKey = options.apiKey ?? (typeof process !== "undefined" ? process.env?.VIDEOFETCH_API_KEY : undefined) ?? "";
@@ -58,6 +62,8 @@ export class VideoFetch {
 
     this.downloads = new DownloadsResource(this);
     this.info = new InfoResource(this);
+    this.usage = new UsageResource(this);
+    this.webhooks = new WebhooksResource(this);
   }
 
   async request<T = unknown>(
@@ -110,7 +116,7 @@ export class VideoFetch {
         }
         if (!response.ok) {
           const body = await parseBody(response);
-          throw mapError(response.status, body);
+          throw mapError(response.status, body, response.headers);
         }
         if (response.status === 204) return undefined as T;
         return (await parseBody(response)) as T;

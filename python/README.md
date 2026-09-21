@@ -105,3 +105,76 @@ pytest
 ## License
 
 MIT
+
+
+## Usage, alerts and credits
+
+```python
+u = client.usage.get()
+u.plan            # "free" | "developer" | "growth" | "scale"
+u.quota_gb        # account plan quota for this month (GB)
+u.used_pct        # % of the monthly quota consumed
+u.remaining_gb    # remaining GB before overage
+u.active_jobs     # jobs currently queued + processing on your account
+u.concurrency_limit  # max in-flight jobs per account
+u.alert_level     # ok | warning | critical | exceeded
+u.payg_balance_cents  # pay-as-you-go credit balance
+
+a = client.usage.alerts()
+a.state.level          # ok | warning | critical | exceeded
+a.state.crossed        # e.g. [80, 95] — thresholds already crossed
+a.state.next_threshold_pct
+a.state.action         # "topup" | "upgrade" | None  → drive your own UI
+a.fired                # alerts already delivered this month (kind/level/pct/created_at)
+a.thresholds           # [80, 95, 100]
+a.topup_amounts        # [10, 25, 50, 100]
+```
+
+Alerts are evaluated after every successful download and delivered to your webhook
+endpoints as `quota.warning` (80%/95%) and `quota.exceeded` (100%); a low credit
+balance emits `balance.low`. Each threshold fires at most once per calendar month,
+so your handler will not be spammed.
+
+## Managing webhook endpoints with your API key
+
+```python
+wh = client.webhooks.create(
+    "https://api.yourapp.com/videofetch/hook",
+    events=["download.completed", "quota.exceeded", "balance.low"],
+)
+wh.secret            # whsec_... — FULL value, shown only on create. Store it now.
+
+client.webhooks.list()          # secrets are masked here
+client.webhooks.test(wh.id)     # send a webhook.test ping, check delivery
+client.webhooks.delete(wh.id)
+```
+
+Available events: `download.queued`, `download.processing`, `download.completed`,
+`download.failed`, `quota.warning`, `quota.exceeded`, `balance.low`.
+
+Verification mirrors the server exactly — HMAC-SHA256 over the **raw** request body:
+
+```python
+from videofetch import construct_event   # or verify_webhook_signature(raw, header, secret)
+event = construct_event(request.body, request.headers["X-VideoFetch-Signature"], wh.secret)
+```
+
+## Concurrency limits and 429s
+
+Your account may run a limited number of jobs at once (queued + processing). When the
+cap is reached the API answers `429` with a typed `RateLimitError` instead of silently
+queueing forever:
+
+```python
+from videofetch import RateLimitError
+try:
+    client.downloads.create(url=url, format="1080p")
+except RateLimitError as e:
+    e.code        # concurrency_limit_exceeded | queue_limit_exceeded | platform_at_capacity
+    e.limit, e.active, e.scope
+    e.retry_after # seconds, from the Retry-After header
+```
+
+`GET /v1/usage` returns `active_jobs` / `concurrency_limit` so you can schedule work
+before hitting the cap. A suspended account returns `403` with
+`code=account_suspended` (surface it to your own operators rather than retrying).
