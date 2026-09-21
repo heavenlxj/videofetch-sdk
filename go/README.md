@@ -1,10 +1,10 @@
 # videofetch-go
 
-Official [VideoFetch](https://videofetch.dev) Go SDK — video ingestion API:
+Official [VideoFetch](https://vidfetch.dev) Go SDK — video ingestion API:
 give us a video URL, we deliver MP4/MP3 to your storage.
 
 ```bash
-go get github.com/heavenlxj/videofetch-go
+go get github.com/heavenlxj/videofetch-sdk/go
 ```
 
 ## Usage
@@ -17,7 +17,7 @@ import (
     "fmt"
     "time"
 
-    videofetch "github.com/heavenlxj/videofetch-go"
+    videofetch "github.com/heavenlxj/videofetch-sdk/go"
 )
 
 func main() {

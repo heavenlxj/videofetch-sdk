@@ -1,6 +1,6 @@
 # @videofetch/sdk (TypeScript)
 
-Official [VideoFetch](https://videofetch.dev) SDK for TypeScript / JavaScript —
+Official [VideoFetch](https://vidfetch.dev) SDK for TypeScript / JavaScript —
 zero runtime dependencies (uses the global `fetch`, works in Node >= 18, browsers
 and edge runtimes).
 
@@ -26,8 +26,8 @@ const job = await client.downloads.create({
 // L2: wait for the terminal state (polls with backoff)
 const result = await job.wait({ timeoutMs: 120_000 });
 console.log(result.status);         // "completed"
-console.log(result.downloadUrl);    // presigned link (url destination)
-console.log(result.storageKey);     // "user://bucket/key" (bucket destination)
+console.log(result.download_url);   // presigned link (url destination)
+console.log(result.storage_key);    // "user://bucket/key" (bucket destination)
 
 // L3: one-shot
 const r = await client.downloads.createAndWait({ url, format: "720p" });
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
 ```ts
 new VideoFetch({
   apiKey: "vf_live_sk_...",      // or process.env.VIDEOFETCH_API_KEY
-  baseUrl: "https://api.videofetch.dev",   // override for local dev
+  baseUrl: "https://api.vidfetch.dev",   // override for local dev
   timeoutMs: 30_000,
   maxRetries: 2,                 // automatic on 429/5xx/network errors
 });

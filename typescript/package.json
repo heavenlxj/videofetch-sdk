@@ -19,7 +19,7 @@
   "engines": { "node": ">=18" },
   "publishConfig": { "access": "public" },
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/heavenlxj/videofetch-sdks" },
+  "repository": { "type": "git", "url": "https://github.com/heavenlxj/videofetch-sdk" },
   "keywords": ["video", "download", "youtube", "api", "sdk", "videofetch"],
   "scripts": {
     "build": "tsup",

@@ -1,10 +1,10 @@
 # videofetch (Python SDK)
 
-Official [VideoFetch](https://videofetch.dev) SDK — video ingestion API:
+Official [VideoFetch](https://vidfetch.dev) SDK — video ingestion API:
 give us a video URL, we deliver MP4/MP3 to your storage.
 
 ```bash
-pip install videofetch
+pip install videofetch-sdk
 ```
 
 ## Usage

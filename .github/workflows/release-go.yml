@@ -2,7 +2,7 @@ name: release-go
 
 on:
   push:
-    tags: ["go-v*"]
+    tags: ["go/v*"]
 
 permissions:
   contents: write

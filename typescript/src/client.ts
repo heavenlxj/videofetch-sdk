@@ -8,7 +8,7 @@ import { DownloadsResource } from "./downloads";
 import { InfoResource } from "./info";
 
 export const DEFAULT_BASE_URL =
-  (typeof process !== "undefined" && process.env?.VIDEOFETCH_BASE_URL) || "https://api.videofetch.dev";
+  (typeof process !== "undefined" && process.env?.VIDEOFETCH_BASE_URL) || "https://api.vidfetch.dev";
 export const DEFAULT_MAX_RETRIES = 2;
 export const DEFAULT_TIMEOUT_MS = 30_000;
 

@@ -1,13 +1,13 @@
 # VideoFetch SDKs (monorepo)
 
-Official SDKs for the [VideoFetch](https://videofetch.dev) video ingestion API:
+Official SDKs for the [VideoFetch](https://vidfetch.dev) video ingestion API:
 give us a video URL, we deliver the MP4/MP3 to your storage.
 
 | Language | Package | Source | Status |
 |---|---|---|---|
 | Python | `videofetch` | [`python/`](python/) | 0.1.0 (dev) |
 | TypeScript | `@videofetch/sdk` | [`typescript/`](typescript/) | 0.1.0 (dev) |
-| Go | `github.com/heavenlxj/videofetch-go` | [`go/`](go/) | v0.1.0 (dev) |
+| Go | `github.com/heavenlxj/videofetch-sdk/go` | [`go/`](go/) | v0.1.0 (dev) |
 
 - `openapi/openapi.json` — the API contract (single source of truth, exported from the backend).
   SDK types are hand-written against it; endpoint/method behaviour must stay in sync.
@@ -16,13 +16,13 @@ give us a video URL, we deliver the MP4/MP3 to your storage.
 
 ```bash
 # Python
-pip install videofetch
+pip install videofetch-sdk
 
 # TypeScript
 npm install @videofetch/sdk
 
 # Go
-go get github.com/heavenlxj/videofetch-go
+go get github.com/heavenlxj/videofetch-sdk/go
 ```
 
 ## Quickstart (all three, same shape)
@@ -50,7 +50,7 @@ const job = await client.downloads.create({
   format: "1080p",
 });
 const result = await job.wait({ timeoutMs: 120_000 });
-console.log(result.downloadUrl);
+console.log(result.download_url);
 ```
 
 ```go
@@ -59,7 +59,7 @@ package main
 import (
     "context"
     "fmt"
-    videofetch "github.com/heavenlxj/videofetch-go"
+    videofetch "github.com/heavenlxj/videofetch-sdk/go"
 )
 
 func main() {

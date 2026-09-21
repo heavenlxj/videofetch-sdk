@@ -6,16 +6,18 @@
 
 ## 0. Prereqs (one-time, human)
 
-- [ ] PyPI: register account + 2FA. Reserve the name `videofetch`
-      (fallback: `videofetch-py`).
-- [ ] PyPI trusted publishing: add pending publisher for
-      `github.com/<org>/videofetch-sdks`, workflow `release-python.yml`.
-- [ ] npm: create org `videofetch` (or verify availability), generate an
-      automation token with publish rights → GitHub secret `NPM_TOKEN`.
-- [ ] Go: nothing to register — git tag + public GitHub repo is all it takes.
-- [ ] GitHub repo `videofetch-sdks` is public, LICENSE = MIT.
-- [ ] Domain `api.videofetch.dev` resolves to the deployment (or override
-      `base_url` in each SDK release until then).
+- [ ] **GitHub repo `heavenlxj/videofetch-sdk` must be PUBLIC** (Go modules are fetched
+      by proxy.golang.org — private repos cannot be `go get`-ed without GOPRIVATE).
+- [ ] PyPI: register account + 2FA. `videofetch` is TAKEN by an unrelated project —
+      this SDK publishes as **`videofetch-sdk`** (import name stays `videofetch`).
+- [ ] PyPI trusted publishing: add pending publisher —
+      project `videofetch-sdk`, owner `heavenlxj`, repo `videofetch-sdk`,
+      workflow `release-python.yml`, environment (leave empty).
+- [ ] npm: create org `videofetch`, generate an **Automation** token →
+      GitHub repo secret `NPM_TOKEN`.
+- [ ] Go: nothing to register. Module path is `github.com/heavenlxj/videofetch-sdk/go`
+      and the tag MUST be `go/v0.1.0` (subdirectory module rule).
+- [ ] Domain `api.vidfetch.dev` resolves to the deployment (SDKs default to it).
 
 ## 1. Version bump
 
@@ -31,7 +33,7 @@ change ships as a coordinated release across all three the same week.
 ```bash
 git tag python-v0.1.0    # triggers .github/workflows/release-python.yml
 git tag ts-v0.1.0        # triggers .github/workflows/release-ts.yml
-git tag go-v0.1.0        # triggers .github/workflows/release-go.yml
+git tag go/v0.1.0        # triggers .github/workflows/release-go.yml
 git push origin --tags
 ```
 
@@ -41,7 +43,7 @@ git push origin --tags
 |---|---|---|
 | `release-python.yml` | `python-v*` | build sdist+wheel → PyPI via trusted publishing (OIDC, no token) |
 | `release-ts.yml` | `ts-v*` | `npm ci && test && build` → `npm publish --provenance` (NPM_TOKEN) |
-| `release-go.yml` | `go-v*` | test → create GitHub Release with auto notes (proxy.golang.org picks the tag up automatically) |
+| `release-go.yml` | `go/v*` | test → create GitHub Release with auto notes (proxy.golang.org picks the tag up automatically) |
 
 Each job runs the full test suite again as a gate. Test suite also runs on every
 PR (`ci.yml`).
@@ -49,9 +51,9 @@ PR (`ci.yml`).
 ## 4. Verify after publish
 
 ```bash
-pip install videofetch && python -c "import videofetch; print(videofetch.__version__)"
+pip install videofetch-sdk && python -c "import videofetch; print(videofetch.__version__)"
 npm view @videofetch/sdk version
-go list -m -versions github.com/heavenlxj/videofetch-go
+go list -m -versions github.com/heavenlxj/videofetch-sdk/go
 ```
 
 ## 5. Docs

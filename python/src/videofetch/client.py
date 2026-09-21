@@ -18,7 +18,7 @@ import httpx
 from .errors import VideoFetchError, map_error
 from .models import Download, DownloadList, TrimSpec, VideoInfo
 
-DEFAULT_BASE_URL = os.getenv("VIDEOFETCH_BASE_URL", "https://api.videofetch.dev")
+DEFAULT_BASE_URL = os.getenv("VIDEOFETCH_BASE_URL", "https://api.vidfetch.dev")
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_JOB_TIMEOUT = 120.0

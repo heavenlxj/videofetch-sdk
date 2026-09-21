@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	DefaultBaseURL   = "https://api.videofetch.dev"
+	DefaultBaseURL   = "https://api.vidfetch.dev"
 	DefaultTimeout   = 30 * time.Second
 	DefaultMaxRetry  = 2
 	DefaultJobTimout = 2 * time.Minute
