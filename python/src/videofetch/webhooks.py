@@ -23,9 +23,14 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from typing import Optional, Union
+from typing import Mapping, Optional, Union
 
 from .errors import VideoFetchError
+
+# Idempotency / retry headers sent on every delivery attempt.
+DELIVERY_HEADER = "X-VideoFetch-Delivery"
+ATTEMPT_HEADER = "X-VideoFetch-Attempt"
+TIMESTAMP_HEADER = "X-VideoFetch-Timestamp"
 
 # Full event set (server contract: schemas.WEBHOOK_EVENTS).
 WEBHOOK_EVENTS = (
@@ -79,3 +84,42 @@ def construct_event(payload: Union[bytes, str], sig_header: Optional[str], secre
         return json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         raise SignatureVerificationError("Payload is not valid JSON.") from None
+
+
+def _header(headers: Mapping[str, str], name: str) -> Optional[str]:
+    """Case-insensitive header lookup (HTTP header names are case-insensitive)."""
+    wanted = name.lower()
+    for key, value in headers.items():
+        if key.lower() == wanted:
+            return value
+    return None
+
+
+def delivery_id(headers: Mapping[str, str]) -> Optional[str]:
+    """Return the `X-VideoFetch-Delivery` idempotency key from request headers.
+
+    Delivery is **at-least-once**: the same event may be delivered more than once
+    (for example after a retry the receiver already processed, or a network error
+    on our side). The `X-VideoFetch-Delivery` value is stable across every attempt
+    of the same event, so use it to deduplicate — persist it (e.g. in a unique
+    index) and skip events you have already handled.
+
+    Returns None when the header is absent.
+    """
+    return _header(headers, DELIVERY_HEADER)
+
+
+def attempt_number(headers: Mapping[str, str]) -> Optional[int]:
+    """Return the `X-VideoFetch-Attempt` number (1 = first attempt).
+
+    Attempts are retried up to 3 times and ordering is not guaranteed; use
+    `delivery_id()` for deduplication and the event body's `seq` to order events.
+    Returns None when the header is absent or not an integer.
+    """
+    raw = _header(headers, ATTEMPT_HEADER)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None

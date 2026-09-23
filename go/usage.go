@@ -8,8 +8,10 @@ type Usage struct {
 	KeyID            string   `json:"key_id"`
 	Plan             string   `json:"plan"`
 	QuotaGB          *float64 `json:"quota_gb"`
-	UsedBytes        int64    `json:"used_bytes"` // cumulative for this API key
-	UsedGB           float64  `json:"used_gb"`
+	UsedBytes        int64    `json:"used_bytes"`     // account-level bytes used this month
+	UsedGB           float64  `json:"used_gb"`        // account-level GB used this month
+	KeyUsedBytes     int64    `json:"key_used_bytes"` // bytes used by this API key this month
+	KeyUsedGB        float64  `json:"key_used_gb"`    // GB used by this API key this month
 	RemainingGB      *float64 `json:"remaining_gb"`
 	PaygBalanceCents int      `json:"payg_balance_cents"`
 	PaygRateUSDPerGB float64  `json:"payg_rate_usd_per_gb"`

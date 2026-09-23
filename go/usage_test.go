@@ -117,3 +117,31 @@ func TestUsageAlerts(t *testing.T) {
 		t.Fatalf("fired = %+v", a.Fired)
 	}
 }
+
+func TestUsageKeyUsedFields(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, 200, map[string]any{
+			"key_id": "key_1", "plan": "pro", "quota_gb": 100.0,
+			// account-level usage (UsedBytes/UsedGB)
+			"used_bytes": 3_000_000_000, "used_gb": 3.0,
+			// per-API-key usage
+			"key_used_bytes": 1_000_000_000, "key_used_gb": 1.0,
+			"remaining_gb": 97.0, "payg_balance_cents": 0, "payg_rate_usd_per_gb": 0.5,
+			"account_used_bytes_month": 3_000_000_000, "account_used_gb_month": 3.0,
+			"used_pct": 3.0, "month": "2026-09", "active_jobs": 1,
+			"concurrency_limit": 10, "alert_level": "ok", "alert_message": "",
+		})
+	}))
+	defer srv.Close()
+
+	u, err := testClient(t, srv).Usage.Get(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u.UsedBytes != 3_000_000_000 || u.UsedGB != 3.0 {
+		t.Fatalf("account-level usage = %d bytes / %v GB", u.UsedBytes, u.UsedGB)
+	}
+	if u.KeyUsedBytes != 1_000_000_000 || u.KeyUsedGB != 1.0 {
+		t.Fatalf("key-level usage = %d bytes / %v GB", u.KeyUsedBytes, u.KeyUsedGB)
+	}
+}

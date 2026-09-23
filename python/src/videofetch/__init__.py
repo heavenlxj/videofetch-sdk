@@ -5,6 +5,7 @@
     job = client.downloads.create(url="https://youtu.be/...", format="1080p")
     result = job.wait()          # polls until completed/failed
     print(result.download_url)   # presigned 7-day link (url destination)
+    path = client.downloads.download_to(result.id)   # save the file locally → abs path
 
 Usage & alerts (v0.2.0):
     usage = client.usage.get()               # quota_gb, used_pct, alert_level, ...
@@ -29,6 +30,8 @@ from .client import AsyncVideoFetch, VideoFetch  # noqa: F401
 from .errors import (  # noqa: F401
     ApiError,
     AuthenticationError,
+    DownloadNotCompletedError,
+    DownloadURLUnavailableError,
     JobFailedError,
     NotFoundError,
     PermissionDeniedError,
@@ -44,33 +47,47 @@ from .models import (  # noqa: F401
     DownloadAttempt,
     DownloadList,
     FormatInfo,
+    ReplayResult,
     TrimSpec,
     Usage,
     UsageAlerts,
     VideoInfo,
+    WebhookDeliveriesResult,
+    WebhookDelivery,
+    WebhookDeliveryHealth,
     WebhookEndpoint,
     WebhookList,
     WebhookTestResult,
 )
 from .resources import DownloadJob  # noqa: F401
 from .webhooks import (  # noqa: F401
+    ATTEMPT_HEADER,
+    DELIVERY_HEADER,
+    TIMESTAMP_HEADER,
     WEBHOOK_EVENTS,
     SignatureVerificationError,
+    attempt_number,
     compute_signature,
     construct_event,
+    delivery_id,
     verify_webhook_signature,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = [
     "VideoFetch", "AsyncVideoFetch", "DownloadJob",
     "VideoFetchError", "AuthenticationError", "PermissionDeniedError", "QuotaExceededError",
     "ValidationError", "NotFoundError", "RateLimitError", "ApiError", "JobFailedError",
+    "DownloadNotCompletedError", "DownloadURLUnavailableError",
     "Download", "DownloadList", "DownloadAttempt", "TrimSpec", "FormatInfo", "VideoInfo",
     # v0.2.0
     "Usage", "UsageAlerts", "AlertState", "AlertEvent",
     "WebhookEndpoint", "WebhookList", "WebhookTestResult",
     "WEBHOOK_EVENTS", "SignatureVerificationError",
     "compute_signature", "construct_event", "verify_webhook_signature",
+    # v0.3.0
+    "WebhookDelivery", "WebhookDeliveriesResult", "WebhookDeliveryHealth", "ReplayResult",
+    "delivery_id", "attempt_number",
+    "DELIVERY_HEADER", "ATTEMPT_HEADER", "TIMESTAMP_HEADER",
     "__version__",
 ]

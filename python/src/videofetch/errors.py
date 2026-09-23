@@ -12,6 +12,11 @@ v0.2.0 error semantics:
   402  QuotaExceededError    — carries remaining_gb.
   400  ValidationError       — code ∈ {invalid_format, invalid_trim, invalid_url, invalid_webhook};
                                carries param.
+
+v0.3.0 error semantics:
+  download_to() local-save preconditions:
+    DownloadNotCompletedError — status is not "completed" yet (code=job_not_completed).
+    DownloadURLUnavailableError — completed but no download_url (code=download_url_unavailable).
 """
 
 from __future__ import annotations
@@ -116,6 +121,39 @@ class JobFailedError(VideoFetchError):
         self.error_code = error_code
         self.error_message = error_message
         self.failed_not_charged = True
+
+
+class DownloadNotCompletedError(VideoFetchError):
+    """The job has not reached `completed`, so there is no artifact to save yet.
+
+    Wait for the terminal state first (``job.wait()`` or the ``download.completed``
+    webhook) and call ``download_to()`` afterwards.
+    """
+
+    def __init__(self, *, job_id: str, status: str):
+        super().__init__(
+            f"Download job {job_id} is not ready to save: status is {status!r} "
+            "(expected 'completed'). Wait for the job to finish before downloading it.",
+            code="job_not_completed",
+        )
+        self.job_id = job_id
+        self.status = status
+
+
+class DownloadURLUnavailableError(VideoFetchError):
+    """The completed job exposes no downloadable link.
+
+    This happens when the file was delivered straight to your own bucket
+    (``destination_type`` other than ``url``) — read it from your storage instead.
+    """
+
+    def __init__(self, *, job_id: str):
+        super().__init__(
+            f"Download job {job_id} completed but has no download_url "
+            "(it was delivered to your own storage destination).",
+            code="download_url_unavailable",
+        )
+        self.job_id = job_id
 
 
 def _parse_retry_after(headers) -> Optional[float]:

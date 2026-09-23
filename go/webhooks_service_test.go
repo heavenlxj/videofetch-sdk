@@ -159,3 +159,153 @@ func TestVerifyWebhookSignature(t *testing.T) {
 		t.Fatal("malformed header should error")
 	}
 }
+
+func TestWebhooksDeliveries(t *testing.T) {
+	var gotQuery string
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		gotPath = r.URL.Path
+		if r.Method != "GET" {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		writeJSON(t, w, 200, map[string]any{
+			"endpoint_id": "wh_1", "active": true, "auto_disabled_at": nil,
+			"consecutive_failures": 2, "max_attempts": 3, "retry_schedule_seconds": "30,300",
+			"health": map[string]any{
+				"total": 5, "succeeded": 3, "dead": 1, "pending": 1, "success_rate": 0.6,
+			},
+			"items": []any{
+				map[string]any{
+					"event_id": "evt_1", "event": "download.completed", "seq": 7,
+					"status": "pending", "attempts": 2, "max_attempts": 3,
+					"last_status_code": 500, "last_error": "receiver returned 500",
+					"next_attempt_at": "2026-09-23T00:00:30Z",
+					"created_at":      "2026-09-23T00:00:00Z", "delivered_at": nil,
+					"download_id": "dl_1",
+				},
+				map[string]any{
+					"event_id": "evt_2", "event": "download.failed", "seq": 8,
+					"status": "succeeded", "attempts": 1, "max_attempts": 3,
+					"last_status_code": 200, "last_error": nil,
+					"next_attempt_at": nil, "created_at": "2026-09-23T00:01:00Z",
+					"delivered_at": "2026-09-23T00:01:01Z", "download_id": nil,
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	res, err := testClient(t, srv).Webhooks.Deliveries(context.Background(), "wh_1", 10)
+	if err != nil {
+		t.Fatalf("deliveries: %v", err)
+	}
+	if gotPath != "/v1/webhooks/wh_1/deliveries" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	if gotQuery != "limit=10" {
+		t.Fatalf("query = %q, want limit=10", gotQuery)
+	}
+	if res.EndpointID != "wh_1" || !res.Active || res.ConsecutiveFailures != 2 {
+		t.Fatalf("unexpected envelope: %+v", res)
+	}
+	if res.AutoDisabledAt != nil {
+		t.Fatalf("auto_disabled_at = %v, want nil", res.AutoDisabledAt)
+	}
+	if res.MaxAttempts != 3 || res.RetryScheduleSeconds != "30,300" {
+		t.Fatalf("unexpected retry metadata: %+v", res)
+	}
+	if res.Health.Total != 5 || res.Health.Dead != 1 || res.Health.SuccessRate != 0.6 {
+		t.Fatalf("unexpected health: %+v", res.Health)
+	}
+	if len(res.Items) != 2 {
+		t.Fatalf("items = %d, want 2", len(res.Items))
+	}
+	it := res.Items[0]
+	if it.EventID != "evt_1" || it.Seq != 7 || it.Attempts != 2 || it.MaxAttempts != 3 {
+		t.Fatalf("unexpected item: %+v", it)
+	}
+	if it.LastStatusCode == nil || *it.LastStatusCode != 500 {
+		t.Fatalf("last_status_code = %v, want 500", it.LastStatusCode)
+	}
+	if it.LastError == nil || *it.LastError != "receiver returned 500" {
+		t.Fatalf("last_error = %v", it.LastError)
+	}
+	if it.DeliveredAt != nil {
+		t.Fatalf("delivered_at = %v, want nil", it.DeliveredAt)
+	}
+	if it.DownloadID == nil || *it.DownloadID != "dl_1" {
+		t.Fatalf("download_id = %v", it.DownloadID)
+	}
+}
+
+func TestWebhooksDeliveriesOmitsLimit(t *testing.T) {
+	var gotRawQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRawQuery = r.URL.RawQuery
+		writeJSON(t, w, 200, map[string]any{
+			"endpoint_id": "wh_1", "active": true, "max_attempts": 3,
+			"health": map[string]any{"total": 0, "succeeded": 0, "dead": 0, "pending": 0, "success_rate": 0},
+			"items":  []any{},
+		})
+	}))
+	defer srv.Close()
+
+	if _, err := testClient(t, srv).Webhooks.Deliveries(context.Background(), "wh_1", 0); err != nil {
+		t.Fatalf("deliveries: %v", err)
+	}
+	if gotRawQuery != "" {
+		t.Fatalf("query = %q, want empty (server default)", gotRawQuery)
+	}
+}
+
+func TestWebhooksReplay(t *testing.T) {
+	var method, path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method, path = r.Method, r.URL.Path
+		writeJSON(t, w, 200, map[string]any{"queued": true, "event_id": "evt_123"})
+	}))
+	defer srv.Close()
+
+	res, err := testClient(t, srv).Webhooks.Replay(context.Background(), "evt_123")
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if method != "POST" || path != "/v1/webhooks/deliveries/evt_123/replay" {
+		t.Fatalf("unexpected request %s %s", method, path)
+	}
+	if !res.Queued || res.EventID != "evt_123" {
+		t.Fatalf("unexpected replay result: %+v", res)
+	}
+}
+
+func TestDeliveryHeaders(t *testing.T) {
+	// http.Header canonicalises key casing, so a differently-cased Set/Get pair
+	// must still match (the "VideoFetch" spelling is not significant).
+	h := http.Header{}
+	h.Set("x-videofetch-delivery", "evt_abc")
+	h.Set("x-videofetch-attempt", "2")
+	if got := DeliveryID(h); got != "evt_abc" {
+		t.Fatalf("DeliveryID = %q, want evt_abc", got)
+	}
+	if got := AttemptNumber(h); got != 2 {
+		t.Fatalf("AttemptNumber = %q, want 2", got)
+	}
+
+	// Missing headers.
+	if got := DeliveryID(http.Header{}); got != "" {
+		t.Fatalf("DeliveryID(missing) = %q, want empty", got)
+	}
+	if got := AttemptNumber(http.Header{}); got != 0 {
+		t.Fatalf("AttemptNumber(missing) = %d, want 0", got)
+	}
+
+	// Malformed / negative attempt values degrade to 0.
+	for _, raw := range []string{"not-a-number", "", "-1", "1.5"} {
+		bh := http.Header{}
+		bh.Set("X-VideoFetch-Attempt", raw)
+		if got := AttemptNumber(bh); got != 0 {
+			t.Fatalf("AttemptNumber(%q) = %d, want 0", raw, got)
+		}
+	}
+}

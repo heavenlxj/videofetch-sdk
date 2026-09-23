@@ -17,6 +17,7 @@ import { VideoFetchError } from "./errors";
 import type { VideoFetch } from "./client";
 import type {
   WebhookEndpoint, WebhookEvent, WebhookList, WebhookPayload, WebhookTestResult,
+  WebhookDeliveriesResult, WebhookReplayResult,
 } from "./types";
 
 export class SignatureVerificationError extends VideoFetchError {
@@ -100,6 +101,53 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/** Case-insensitive header lookup; returns the first value for multi-value headers. */
+function headerValue(
+  headers: Record<string, string | string[] | undefined>,
+  name: string,
+): string | null {
+  const target = name.toLowerCase();
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() !== target) continue;
+    const raw = headers[key];
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    return value == null ? null : value;
+  }
+  return null;
+}
+
+/**
+ * Read the delivery id from a webhook request (`X-VideoFetch-Delivery`).
+ *
+ * The value is the event id (`evt_…`) and is stable across every delivery of
+ * the same event. Delivery is **at-least-once**: the same event may be sent
+ * more than once (retries and manual replays), and the order of events is not
+ * guaranteed (use `WebhookDelivery.seq` to order them). De-duplicate on this
+ * value — e.g. remember handled ids and make a repeat a no-op — so consumers
+ * stay idempotent.
+ *
+ * The header name is matched case-insensitively. Returns null when absent.
+ */
+export function getDeliveryId(headers: Record<string, string | string[] | undefined>): string | null {
+  return headerValue(headers, "X-VideoFetch-Delivery");
+}
+
+/**
+ * Read the delivery attempt number from a webhook request (`X-VideoFetch-Attempt`).
+ *
+ * The first delivery is attempt 1; retries increment it (up to `max_attempts`,
+ * currently 3). Combined with {@link getDeliveryId}, use this to observe retry
+ * behaviour — the same delivery id arrives more than once under at-least-once
+ * semantics. The header name is matched case-insensitively. Returns null when
+ * the header is absent or not an integer.
+ */
+export function getAttemptNumber(headers: Record<string, string | string[] | undefined>): number | null {
+  const raw = headerValue(headers, "X-VideoFetch-Attempt");
+  if (raw == null || raw.trim() === "") return null;
+  const n = Number(raw);
+  return Number.isInteger(n) ? n : null;
+}
+
 /**
  * Account-level webhook endpoint management.
  *
@@ -140,5 +188,36 @@ export class WebhooksResource {
   /** DELETE /v1/webhooks/{id} — 204 No Content. */
   async delete(id: string): Promise<void> {
     await this.client.request("DELETE", `/v1/webhooks/${encodeURIComponent(id)}`);
+  }
+
+  /**
+   * GET /v1/webhooks/{endpoint_id}/deliveries — recent delivery history plus
+   * endpoint health: `attempts`, `last_status_code`, `next_attempt_at`, the
+   * backoff `retry_schedule_seconds` and `consecutive_failures`.
+   *
+   * `limit` is the page size (the server default applies when omitted). The
+   * endpoint must belong to the caller's account.
+   */
+  async deliveries(endpointId: string, limit?: number): Promise<WebhookDeliveriesResult> {
+    return this.client.request<WebhookDeliveriesResult>(
+      "GET",
+      `/v1/webhooks/${encodeURIComponent(endpointId)}/deliveries`,
+      { params: { limit } },
+    );
+  }
+
+  /**
+   * POST /v1/webhooks/deliveries/{event_id}/replay — re-queue one recorded
+   * delivery.
+   *
+   * The replay reuses the original `event_id` and is at-least-once, so a
+   * consumer that de-duplicates on `X-VideoFetch-Delivery` treats an already
+   * handled event as a no-op.
+   */
+  async replay(eventId: string): Promise<WebhookReplayResult> {
+    return this.client.request<WebhookReplayResult>(
+      "POST",
+      `/v1/webhooks/deliveries/${encodeURIComponent(eventId)}/replay`,
+    );
   }
 }

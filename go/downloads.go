@@ -3,8 +3,14 @@ package videofetch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -58,9 +64,11 @@ type DestinationSpec struct {
 
 // DownloadAttempt is one recorded download attempt (fail-not-charged evidence).
 type DownloadAttempt struct {
-	AttemptNo    int     `json:"attempt_no"`
-	Strategy     string  `json:"strategy"`
-	ProxyHost    *string `json:"proxy_host"`
+	AttemptNo int    `json:"attempt_no"`
+	Strategy  string `json:"strategy"`
+	// Egress is a neutral relay label ("relay") or nil for a direct attempt. Internal
+	// egress hosts are never exposed by the API.
+	Egress       *string `json:"egress"`
 	Result       string  `json:"result"`
 	ErrorCode    *string `json:"error_code"`
 	ErrorMessage *string `json:"error_message"`
@@ -98,6 +106,11 @@ type Download struct {
 	CompletedAt          *string           `json:"completed_at"`
 	EstimatedBytes       *int64            `json:"estimated_bytes"`
 	AttemptDetails       []DownloadAttempt `json:"attempt_details"`
+	// Queue telemetry. Only set while Status == StatusQueued; nil in every other
+	// state (the API serialises them as null).
+	QueuePosition        *int `json:"queue_position"`
+	AheadOfYou           *int `json:"ahead_of_you"`
+	EstimatedWaitSeconds *int `json:"estimated_wait_seconds"`
 }
 
 // DownloadCreateParams is the POST /v1/downloads body.
@@ -228,6 +241,158 @@ func (s *DownloadsService) CreateAndWait(ctx context.Context, p DownloadCreatePa
 		return nil, err
 	}
 	return job.Wait(ctx, timeout)
+}
+
+// DownloadTo streams the finished artifact of a completed job to a local file
+// and returns the absolute path it was written to.
+//
+// The job must already be completed; otherwise a *JobNotCompletedError is
+// returned. The file is fetched from the platform-issued, self-authorising
+// DownloadURL — no API key is sent to it — and copied to disk in chunks (the
+// file is never held in memory).
+//
+// path selects the destination:
+//
+//   - "" (or a path that is an existing directory, or ends with a path
+//     separator) writes <sanitized Title or id><ext> inside that directory,
+//     where ext is .mp3 for FormatMP3 and .mp4 otherwise. path == "" means the
+//     current working directory.
+//   - anything else is used verbatim as the file path.
+//
+// If the signed link has expired the download answers 403; the job is then
+// re-fetched (the server re-issues the link) and the download is retried once.
+// A second failure is returned to the caller.
+func (s *DownloadsService) DownloadTo(ctx context.Context, id string, path string) (string, error) {
+	dl, err := s.Retrieve(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if dl.Status != StatusCompleted {
+		return "", &JobNotCompletedError{JobID: dl.ID, Status: dl.Status}
+	}
+	if dl.DownloadURL == nil || *dl.DownloadURL == "" {
+		return "", fmt.Errorf("videofetch: download job %s is completed but has no download_url to fetch", dl.ID)
+	}
+
+	target := downloadTargetPath(path, dl, id)
+
+	err = s.client.fetchToFile(ctx, *dl.DownloadURL, target)
+	if errors.Is(err, errLinkExpired) {
+		// The link expired; re-fetch the job so the server issues a fresh one.
+		refreshed, rerr := s.Retrieve(ctx, id)
+		if rerr != nil {
+			return "", rerr
+		}
+		if refreshed.DownloadURL == nil || *refreshed.DownloadURL == "" {
+			return "", fmt.Errorf("videofetch: download job %s has no download_url after refresh", id)
+		}
+		err = s.client.fetchToFile(ctx, *refreshed.DownloadURL, target)
+	}
+	if err != nil {
+		return "", err
+	}
+
+	abs, err := filepath.Abs(target)
+	if err != nil {
+		return target, nil
+	}
+	return abs, nil
+}
+
+// errLinkExpired marks a 403 from a direct download link so DownloadTo can
+// refresh the job (and its freshly signed link) and retry once.
+var errLinkExpired = errors.New("videofetch: download link rejected (expired)")
+
+// fetchToFile streams link into target in chunks. No Authorization header is
+// sent: direct links are self-authorising.
+func (c *Client) fetchToFile(ctx context.Context, link, target string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, link, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "videofetch-go/0.3.0")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("videofetch: network error fetching download link: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusForbidden {
+		return errLinkExpired
+	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("videofetch: download link returned HTTP %d", resp.StatusCode)
+	}
+
+	f, err := os.Create(target)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		f.Close()
+		os.Remove(target)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(target)
+		return err
+	}
+	return nil
+}
+
+// maxFilenameLen caps a derived file name (in runes) to a filesystem-friendly size.
+const maxFilenameLen = 80
+
+// downloadTargetPath resolves the destination file for DownloadTo. When path
+// names a directory ("", existing dir or a trailing separator) the default name
+// <sanitized Title or id><ext> is placed inside it; otherwise path is verbatim.
+func downloadTargetPath(path string, dl *Download, id string) string {
+	ext := ".mp4"
+	if dl.Format == FormatMP3 {
+		ext = ".mp3"
+	}
+	name := ""
+	if dl.Title != nil {
+		name = sanitizeFilename(*dl.Title)
+	}
+	if name == "" {
+		name = sanitizeFilename(id)
+	}
+	if name == "" {
+		name = "download"
+	}
+	defaultName := name + ext
+
+	if path == "" {
+		return defaultName
+	}
+	if strings.HasSuffix(path, "/") || strings.HasSuffix(path, string(os.PathSeparator)) {
+		return filepath.Join(path, defaultName)
+	}
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return filepath.Join(path, defaultName)
+	}
+	return path
+}
+
+// sanitizeFilename turns a title or id into a single safe path segment: path
+// separators and control characters are dropped, leading/trailing whitespace
+// and dots are trimmed and the result is capped at maxFilenameLen runes.
+func sanitizeFilename(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r == '/' || r == '\\' || r < 0x20 || r == 0x7f {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	name := strings.Trim(strings.TrimSpace(b.String()), ".")
+	name = strings.TrimSpace(name)
+	if runes := []rune(name); len(runes) > maxFilenameLen {
+		name = strings.TrimRight(strings.TrimSpace(string(runes[:maxFilenameLen])), ".")
+	}
+	return name
 }
 
 // Job is a polling handle around a queued/processing download.

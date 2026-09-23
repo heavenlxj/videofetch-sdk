@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -158,6 +159,26 @@ func (e *JobFailedError) Error() string {
 		e.JobID, e.ErrorCode, e.ErrorMessage)
 }
 
+// ErrJobNotCompleted is wrapped by *JobNotCompletedError so callers can match
+// the "artifact is not ready yet" case with errors.Is.
+var ErrJobNotCompleted = errors.New("videofetch: download job is not completed yet")
+
+// JobNotCompletedError is returned by Downloads.DownloadTo when the job has not
+// reached status "completed" yet, so there is nothing to save. Poll with Wait
+// (or the download.completed webhook) first.
+type JobNotCompletedError struct {
+	JobID  string
+	Status DownloadStatus
+}
+
+func (e *JobNotCompletedError) Error() string {
+	return fmt.Sprintf("videofetch: download job %s is %q — wait for completion before downloading",
+		e.JobID, e.Status)
+}
+
+// Unwrap exposes the ErrJobNotCompleted sentinel.
+func (e *JobNotCompletedError) Unwrap() error { return ErrJobNotCompleted }
+
 // request performs an HTTP call with retry on 429/5xx/network errors.
 func (c *Client) request(ctx context.Context, method, path string, body any, out any) error {
 	var raw []byte
@@ -182,7 +203,7 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 		}
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "videofetch-go/0.2.0")
+		req.Header.Set("User-Agent", "videofetch-go/0.3.0")
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {

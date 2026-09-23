@@ -43,6 +43,22 @@ func main() {
 }
 ```
 
+Save the finished artifact straight to disk (the presigned `download_url` is
+fetched without your API key and streamed to the file in chunks):
+
+```go
+// "" derives <title-or-id>.<mp4|mp3> in the current directory; an existing
+// directory (or a trailing separator) puts the derived name inside it.
+abs, err := client.Downloads.DownloadTo(ctx, result.ID, "")
+if err != nil { panic(err) }
+fmt.Println(abs) // /absolute/path/to/My Clip.mp4
+
+// A non-completed job fails fast:
+if _, err := client.Downloads.DownloadTo(ctx, id, "out.mp4"); errors.Is(err, videofetch.ErrJobNotCompleted) {
+    // wait for completion (Job.Wait or the download.completed webhook) first
+}
+```
+
 Free metadata lookup:
 
 ```go

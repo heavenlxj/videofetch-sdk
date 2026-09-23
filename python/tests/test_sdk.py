@@ -110,3 +110,35 @@ def test_info_lookup():
     info = c.info.lookup("https://youtu.be/x")
     assert info.title == "Hello"
     assert info.formats[0].quality == "720p"
+
+
+def test_queued_download_exposes_queue_hints():
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.method == "POST":
+            return httpx.Response(202, json=_download_json(
+                "queued", queue_position=1, ahead_of_you=0, estimated_wait_seconds=42))
+        return httpx.Response(200, json=_download_json(
+            "queued", queue_position=2, ahead_of_you=1, estimated_wait_seconds=90))
+
+    c = _client(handler)
+    job = c.downloads.create("https://www.youtube.com/watch?v=x")
+    assert job.download.queue_position == 1
+    assert job.download.ahead_of_you == 0
+    assert job.download.estimated_wait_seconds == 42
+
+    detail = c.downloads.retrieve(job.id)
+    assert detail.queue_position == 2 and detail.ahead_of_you == 1
+    assert detail.estimated_wait_seconds == 90
+
+
+def test_queue_hints_are_none_when_not_queued():
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_download_json(
+            "processing", progress=50, queue_position=None, ahead_of_you=None,
+            estimated_wait_seconds=None))
+
+    c = _client(handler)
+    detail = c.downloads.retrieve("dl_abc123")
+    assert detail.queue_position is None
+    assert detail.ahead_of_you is None
+    assert detail.estimated_wait_seconds is None

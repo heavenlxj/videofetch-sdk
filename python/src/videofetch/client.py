@@ -106,6 +106,16 @@ class VideoFetch:
             return _parse_body(resp)
         raise VideoFetchError("request failed")  # pragma: no cover
 
+    def open_stream(self, url: str) -> httpx.Response:
+        """Open a streaming GET to an absolute URL WITHOUT the API key.
+
+        Download links are self-authorizing (time-limited), so the client's
+        default headers are intentionally not attached: the request is built
+        directly and sent through this client's transport. The caller owns the
+        returned response and must close it.
+        """
+        return self._client.send(httpx.Request("GET", url), stream=True)
+
     def close(self) -> None:
         self._client.close()
 
@@ -176,6 +186,10 @@ class AsyncVideoFetch:
                 return None
             return _parse_body(resp)
         raise VideoFetchError("request failed")  # pragma: no cover
+
+    async def open_stream(self, url: str) -> httpx.Response:
+        """Async twin of :meth:`VideoFetch.open_stream` — no API key is sent."""
+        return await self._client.send(httpx.Request("GET", url), stream=True)
 
     async def close(self) -> None:
         await self._client.aclose()

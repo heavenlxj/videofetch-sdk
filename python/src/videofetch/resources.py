@@ -8,24 +8,107 @@ Three-layer design (see docs/SDK_RELEASE_GUIDE.md):
 
 from __future__ import annotations
 
+import os
+import re
 import time
-from typing import Optional
+from typing import Optional, Union
+
+import httpx
 
 from .client import DEFAULT_JOB_TIMEOUT, _poll_delay
-from .errors import JobFailedError, VideoFetchError
+from .errors import (
+    DownloadNotCompletedError,
+    DownloadURLUnavailableError,
+    JobFailedError,
+    VideoFetchError,
+    map_error,
+)
 from .models import (
     Download,
     DownloadList,
+    ReplayResult,
     TrimSpec,
     Usage,
     UsageAlerts,
     VideoInfo,
+    WebhookDeliveriesResult,
     WebhookEndpoint,
     WebhookList,
     WebhookTestResult,
 )
 
 TERMINAL = ("completed", "failed", "deleted")
+
+PathLike = Union[str, os.PathLike]
+_DOWNLOAD_CHUNK_SIZE = 64 * 1024
+_MAX_FILENAME_LEN = 80
+# Path separators, control characters and characters no sane filesystem wants.
+_UNSAFE_FILENAME_CHARS = re.compile(r'[\x00-\x1f\x7f/\\:*?"<>|]')
+
+
+def _safe_filename(value: Optional[str], fallback: str) -> str:
+    """Turn arbitrary text into a single, filesystem-safe path component.
+
+    Drops path separators, control characters and unsafe punctuation, trims
+    surrounding whitespace and dots, then caps the length. Empty results fall
+    back to `fallback` (the job id).
+    """
+    cleaned = _UNSAFE_FILENAME_CHARS.sub("", value or "").strip().strip(".").strip()
+    if not cleaned:
+        cleaned = fallback
+    return cleaned[:_MAX_FILENAME_LEN] or fallback[:_MAX_FILENAME_LEN]
+
+
+def _default_filename(download: Download) -> str:
+    """`<sanitized title or job id>.<mp3|mp4>` for this job."""
+    stem = _safe_filename(download.title, download.id)
+    ext = ".mp3" if (download.format or "").lower() == "mp3" else ".mp4"
+    return f"{stem}{ext}"
+
+
+def _resolve_target_path(download: Download, path: Optional[PathLike]) -> str:
+    """Resolve the caller's `path` into the file we will write.
+
+    `None` → the default name in the current directory. A path that is an
+    existing directory, or ends with a separator, gets the default name appended.
+    """
+    name = _default_filename(download)
+    if path is None:
+        return os.path.join(os.getcwd(), name)
+    raw = os.fspath(path)
+    if raw.endswith((os.sep, "/", "\\")) or (raw and os.path.isdir(raw)):
+        return os.path.join(raw, name)
+    return raw
+
+
+def _ensure_downloadable(download: Download) -> str:
+    """Validate the job is ready and return its download_url."""
+    if download.status == "failed":
+        raise JobFailedError(
+            job_id=download.id, error_code=download.error_code,
+            error_message=download.error_message)
+    if download.status != "completed":
+        raise DownloadNotCompletedError(job_id=download.id, status=download.status)
+    if not download.download_url:
+        raise DownloadURLUnavailableError(job_id=download.id)
+    return download.download_url
+
+
+async def _aread_body(resp: httpx.Response) -> object:
+    """Read a streaming error response into a JSON/text body for error mapping."""
+    await resp.aread()
+    try:
+        return resp.json()
+    except Exception:
+        return resp.text
+
+
+def _read_body(resp: httpx.Response) -> object:
+    """Sync twin of :func:`_aread_body`."""
+    try:
+        return resp.json()
+    except Exception:
+        return resp.text
 
 
 def _build_trim(trim: Optional[TrimSpec], trim_start: Optional[float],
@@ -95,6 +178,45 @@ class DownloadsResource:
     def cancel(self, download_id: str) -> None:
         """Cancel/delete a job (queued/processing). Safe to call on any state."""
         self._client.request("DELETE", f"/v1/downloads/{download_id}")
+
+    def download_to(self, download_id: str, path: Optional[PathLike] = None) -> str:
+        """Stream a completed job's artifact to a local file; return its absolute path.
+
+        When the job was created with no destination configured the platform
+        issues a time-limited, self-authorizing ``download_url`` and this method
+        saves it locally, in chunks (the file is never held in memory). The API
+        key is deliberately NOT sent to that link; if it has expired the server
+        re-signs it on the next ``GET /v1/downloads/{id}``, which we do once when
+        the link answers 403.
+
+        `path` may be a file path, or an existing/last-component directory
+        (a path ending in a separator) in which case the default name is used:
+        ``<sanitized title or job id>.<mp3|mp4>`` in the current directory.
+        """
+        download = self.retrieve(download_id)
+        url = _ensure_downloadable(download)
+        target = _resolve_target_path(download, path)
+
+        resp = self._client.open_stream(url)
+        if resp.status_code == 403:
+            # Link expired: re-fetch the job so the server re-signs it, retry once.
+            resp.close()
+            download = self.retrieve(download_id)
+            url = _ensure_downloadable(download)
+            resp = self._client.open_stream(url)
+
+        try:
+            if resp.status_code >= 400:
+                raise map_error(resp.status_code, _read_body(resp))
+            parent = os.path.dirname(target)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(target, "wb") as fh:
+                for chunk in resp.iter_bytes(chunk_size=_DOWNLOAD_CHUNK_SIZE):
+                    fh.write(chunk)
+        finally:
+            resp.close()
+        return os.path.abspath(target)
 
     def create_and_wait(self, url: str, format: str = "720p", *, timeout: float = DEFAULT_JOB_TIMEOUT,
                         **kwargs) -> Download:
@@ -220,6 +342,37 @@ class AsyncDownloadsResource:
 
     async def cancel(self, download_id: str) -> None:
         await self._client.request("DELETE", f"/v1/downloads/{download_id}")
+
+    async def download_to(self, download_id: str, path: Optional[PathLike] = None) -> str:
+        """Async twin of :meth:`DownloadsResource.download_to` — streams to disk.
+
+        No API key is sent to the self-authorizing link; a 403 triggers one
+        re-fetch of the job (the server re-signs the URL) and a single retry.
+        """
+        download = await self.retrieve(download_id)
+        url = _ensure_downloadable(download)
+        target = _resolve_target_path(download, path)
+
+        resp = await self._client.open_stream(url)
+        if resp.status_code == 403:
+            await resp.aclose()
+            download = await self.retrieve(download_id)
+            url = _ensure_downloadable(download)
+            resp = await self._client.open_stream(url)
+
+        try:
+            if resp.status_code >= 400:
+                raise map_error(resp.status_code, await _aread_body(resp))
+            parent = os.path.dirname(target)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            # Local file writes are small and sequential; keep the copy simple.
+            with open(target, "wb") as fh:
+                async for chunk in resp.aiter_bytes(chunk_size=_DOWNLOAD_CHUNK_SIZE):
+                    fh.write(chunk)
+        finally:
+            await resp.aclose()
+        return os.path.abspath(target)
 
     async def create_and_wait(self, url: str, format: str = "720p", *,
                               timeout: float = DEFAULT_JOB_TIMEOUT, **kwargs) -> Download:
@@ -363,6 +516,25 @@ class WebhooksResource:
         data = self._client.request("POST", f"/v1/webhooks/{webhook_id}/test")
         return WebhookTestResult.from_dict(data)
 
+    def deliveries(self, endpoint_id: str, limit: int = 50) -> WebhookDeliveriesResult:
+        """Recent deliveries for an endpoint plus aggregate health.
+
+        Deliveries are at-least-once and not ordered — dedupe by `event_id`
+        (the `X-VideoFetch-Delivery` header) and sort by `seq`.
+        """
+        data = self._client.request(
+            "GET", f"/v1/webhooks/{endpoint_id}/deliveries", params={"limit": limit})
+        return WebhookDeliveriesResult.from_dict(data)
+
+    def replay(self, event_id: str) -> ReplayResult:
+        """Queue a fresh delivery of a past event (identified by its event_id).
+
+        Raises NotFoundError when the delivery is not visible to this account.
+        """
+        data = self._client.request(
+            "POST", f"/v1/webhooks/deliveries/{event_id}/replay")
+        return ReplayResult.from_dict(data)
+
 
 class AsyncWebhooksResource:
     def __init__(self, client):
@@ -384,3 +556,13 @@ class AsyncWebhooksResource:
     async def test(self, webhook_id: str) -> WebhookTestResult:
         data = await self._client.request("POST", f"/v1/webhooks/{webhook_id}/test")
         return WebhookTestResult.from_dict(data)
+
+    async def deliveries(self, endpoint_id: str, limit: int = 50) -> WebhookDeliveriesResult:
+        data = await self._client.request(
+            "GET", f"/v1/webhooks/{endpoint_id}/deliveries", params={"limit": limit})
+        return WebhookDeliveriesResult.from_dict(data)
+
+    async def replay(self, event_id: str) -> ReplayResult:
+        data = await self._client.request(
+            "POST", f"/v1/webhooks/deliveries/{event_id}/replay")
+        return ReplayResult.from_dict(data)

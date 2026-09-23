@@ -66,6 +66,15 @@ export class VideoFetch {
     this.webhooks = new WebhooksResource(this);
   }
 
+  /**
+   * Fetch a self-authorising absolute URL (e.g. a time-limited download link).
+   * Deliberately sends **no** Authorization header — an API key must never be
+   * forwarded to a storage host. Uses the same injected `fetch` as `request()`.
+   */
+  fetchPresigned(url: string): Promise<Response> {
+    return this._fetch(url, { method: "GET" });
+  }
+
   async request<T = unknown>(
     method: string,
     path: string,

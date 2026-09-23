@@ -3,7 +3,7 @@
 export type DownloadFormat = "144p" | "240p" | "360p" | "480p" | "720p" | "1080p" | "1440p" | "2160p" | "mp3";
 export type DownloadStatus = "queued" | "processing" | "completed" | "failed" | "deleted";
 export type DestinationType = "url" | "s3" | "r2" | "gcs" | "s3_compatible";
-export type DownloadStrategy = "direct" | "decodo_isp" | "decodo_dc";
+export type DownloadStrategy = "direct" | "relay" | "relay_secondary";
 
 export interface TrimSpec {
   /** clip start, seconds (float ok) */
@@ -15,7 +15,8 @@ export interface TrimSpec {
 export interface DownloadAttempt {
   attempt_no: number;
   strategy: string;
-  proxy_host?: string | null;
+  /** Neutral relay label ("relay") when the attempt used one, otherwise null. */
+  egress?: string | null;
   result: string;
   error_code?: string | null;
   error_message?: string | null;
@@ -31,6 +32,12 @@ export interface Download {
   url: string;
   format: DownloadFormat;
   progress?: number;
+  /** position in the queue while status=queued, null otherwise */
+  queue_position?: number | null;
+  /** number of jobs ahead of this one while status=queued, null otherwise */
+  ahead_of_you?: number | null;
+  /** rough wait estimate in seconds while status=queued, null otherwise */
+  estimated_wait_seconds?: number | null;
   title?: string | null;
   video_id?: string | null;
   channel?: string | null;
@@ -152,6 +159,54 @@ export interface WebhookTestResult {
   signature_format: string;
 }
 
+export type WebhookDeliveryStatus = "pending" | "succeeded" | "dead";
+
+/** Aggregate counters returned alongside a deliveries listing. */
+export interface WebhookDeliveryHealth {
+  total: number;
+  succeeded: number;
+  dead: number;
+  pending: number;
+  /** succeeded / total as a 0..1 ratio, or null when no deliveries were recorded */
+  success_rate: number | null;
+}
+
+/** One recorded webhook delivery attempt group for an endpoint. */
+export interface WebhookDelivery {
+  event_id: string;
+  event: WebhookEvent;
+  /** monotonic per-endpoint sequence number — deliveries are NOT guaranteed to arrive in order */
+  seq: number;
+  status: WebhookDeliveryStatus;
+  attempts: number;
+  max_attempts: number;
+  last_status_code?: number | null;
+  last_error?: string | null;
+  next_attempt_at?: string | null;
+  created_at?: string | null;
+  delivered_at?: string | null;
+  download_id?: string | null;
+}
+
+/** Result of GET /v1/webhooks/{endpoint_id}/deliveries. */
+export interface WebhookDeliveriesResult {
+  endpoint_id: string;
+  active: boolean;
+  auto_disabled_at?: string | null;
+  consecutive_failures: number;
+  max_attempts: number;
+  /** comma-separated backoff schedule in seconds, e.g. "30,300" */
+  retry_schedule_seconds: string;
+  health: WebhookDeliveryHealth;
+  items: WebhookDelivery[];
+}
+
+/** Result of POST /v1/webhooks/deliveries/{event_id}/replay. */
+export interface WebhookReplayResult {
+  queued: boolean;
+  event_id: string;
+}
+
 export interface WebhookPayload {
   event: WebhookEvent;
   id: string;
@@ -183,9 +238,13 @@ export interface Usage {
   key_id: string;
   plan: string;
   quota_gb: number | null;
-  /** cumulative bytes for this API key (materialized cache) */
+  /** account-level usage for the current month */
   used_bytes: number;
+  /** account-level usage for the current month */
   used_gb: number;
+  /** this API key's own usage for the current month */
+  key_used_bytes?: number;
+  key_used_gb?: number;
   remaining_gb: number | null;
   payg_balance_cents: number;
   payg_rate_usd_per_gb: number;

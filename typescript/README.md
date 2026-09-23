@@ -31,6 +31,14 @@ console.log(result.storage_key);    // "user://bucket/key" (bucket destination)
 
 // L3: one-shot
 const r = await client.downloads.createAndWait({ url, format: "720p" });
+
+// Save the finished file locally (Node.js only) — streams to disk, returns the path
+const path = await client.downloads.downloadTo(r.id);
+// path === "/abs/cwd/<title-or-id>.mp4"   (pass a file or a directory to override)
+
+// Any runtime (browser / edge): get the raw bytes and persist them yourself
+const bytes = await client.downloads.downloadBytes(r.id);
+// e.g. browser: const url = URL.createObjectURL(new Blob([bytes]))
 ```
 
 Webhooks (Next.js route handler / Hono / Fastify):

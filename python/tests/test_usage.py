@@ -9,6 +9,7 @@ from videofetch.models import AlertEvent, AlertState, Usage, UsageAlerts
 USAGE_JSON = {
     "key_id": "key_1", "plan": "free", "quota_gb": 1.0,
     "used_bytes": 107374182, "used_gb": 0.1, "remaining_gb": 0.9,
+    "key_used_bytes": 53687091, "key_used_gb": 0.05,
     "payg_balance_cents": 0, "payg_rate_usd_per_gb": 0.5,
     "account_used_bytes_month": 107374182, "account_used_gb_month": 0.1,
     "used_pct": 10.0, "month": "2026-09", "active_jobs": 2,
@@ -72,6 +73,22 @@ def test_usage_get_maps_all_fields():
     assert u.used_pct == 10.0 and u.month == "2026-09"
     assert u.active_jobs == 2 and u.concurrency_limit == 5
     assert u.alert_level == "ok"
+    # v0.3.0: used_* is account-level; key_used_* is per-key attribution.
+    assert u.used_bytes == u.account_used_bytes_month
+    assert u.used_gb == u.account_used_gb_month
+    assert u.key_used_bytes == 53687091 and u.key_used_gb == 0.05
+
+
+def test_usage_key_used_defaults_to_zero_when_absent():
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "key_id": "k", "plan": "free", "quota_gb": 1.0,
+            "used_bytes": 107374182, "used_gb": 0.1})
+
+    c = _client(handler)
+    u = c.usage.get()
+    assert u.used_gb == 0.1                          # account-level month
+    assert u.key_used_bytes == 0 and u.key_used_gb == 0.0
 
 
 def test_usage_get_defaults_when_fields_missing():

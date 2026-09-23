@@ -5,9 +5,9 @@ give us a video URL, we deliver the MP4/MP3 to your storage.
 
 | Language | Package | Source | Status |
 |---|---|---|---|
-| Python | `videofetch` | [`python/`](python/) | 0.1.0 (dev) |
-| TypeScript | `@videofetch/sdk` | [`typescript/`](typescript/) | 0.1.0 (dev) |
-| Go | `github.com/heavenlxj/videofetch-sdk/go` | [`go/`](go/) | v0.1.0 (dev) |
+| Python | `videofetch` | [`python/`](python/) | 0.3.0 |
+| TypeScript | `@videofetch/sdk` | [`typescript/`](typescript/) | 0.3.0 |
+| Go | `github.com/heavenlxj/videofetch-sdk/go` | [`go/`](go/) | v0.3.0 |
 
 - `openapi/openapi.json` — the API contract (single source of truth, exported from the backend).
   SDK types are hand-written against it; endpoint/method behaviour must stay in sync.

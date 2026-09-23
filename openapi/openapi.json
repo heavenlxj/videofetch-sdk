@@ -1,1 +1,2211 @@
-{"openapi":"3.1.0","info":{"title":"VideoFetch API","description":"Video ingestion API for developers — YouTube URL → MP4/MP3, delivered to your storage.\n\n服务端调用: `Authorization: Bearer <API key>` (POST /v1/keys 创建, 需 Supabase JWT)\n用户登录: Supabase JWT (dashboard/订阅/storage)\n\n核心端点:\n  POST /v1/downloads   {url, format: 144p…2160p|mp3, trim?, destination?, webhook_url?}\n  GET  /v1/downloads/:id  → 状态/链接/attempts (失败不收费)\n  POST /v1/info        免费元数据\n  GET  /v1/stats/overview  Dashboard 用量/成功率/成本\n失败下载永不收费 (Failed downloads are free).","version":"0.3.0"},"paths":{"/v1/downloads":{"post":{"tags":["downloads"],"summary":"Create Download","operationId":"create_download_v1_downloads_post","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/DownloadCreate"}}}},"responses":{"202":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"get":{"tags":["downloads"],"summary":"List Downloads","operationId":"list_downloads_v1_downloads_get","parameters":[{"name":"status","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Status"}},{"name":"q","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"Search title/url/id","title":"Q"},"description":"Search title/url/id"},{"name":"limit","in":"query","required":false,"schema":{"type":"integer","maximum":100,"default":20,"title":"Limit"}},{"name":"offset","in":"query","required":false,"schema":{"type":"integer","minimum":0,"default":0,"title":"Offset"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/downloads/{download_id}":{"get":{"tags":["downloads"],"summary":"Get Download","operationId":"get_download_v1_downloads__download_id__get","parameters":[{"name":"download_id","in":"path","required":true,"schema":{"type":"string","title":"Download Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"delete":{"tags":["downloads"],"summary":"Delete Download","operationId":"delete_download_v1_downloads__download_id__delete","parameters":[{"name":"download_id","in":"path","required":true,"schema":{"type":"string","title":"Download Id"}}],"responses":{"204":{"description":"Successful Response"},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/info":{"post":{"tags":["info"],"summary":"Video Info","operationId":"video_info_v1_info_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/InfoRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/keys":{"post":{"tags":["keys"],"summary":"Create Key","description":"用户创建 API key: 额度走 account 计划 (Free 5GB/月, 结算每月刷新).","operationId":"create_key_v1_keys_post","parameters":[{"name":"X-Admin-Token","in":"header","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"X-Admin-Token"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/KeyCreate"}}}},"responses":{"201":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"get":{"tags":["keys"],"summary":"List Keys","operationId":"list_keys_v1_keys_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}}},"/v1/keys/{key_id}":{"delete":{"tags":["keys"],"summary":"Revoke Key","operationId":"revoke_key_v1_keys__key_id__delete","parameters":[{"name":"key_id","in":"path","required":true,"schema":{"type":"string","title":"Key Id"}}],"responses":{"204":{"description":"Successful Response"},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/usage":{"get":{"tags":["usage"],"summary":"Get Usage","operationId":"get_usage_v1_usage_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}}},"/v1/usage/summary":{"get":{"tags":["usage"],"summary":"Get Usage Summary","operationId":"get_usage_summary_v1_usage_summary_get","parameters":[{"name":"days","in":"query","required":false,"schema":{"type":"integer","maximum":90,"default":30,"title":"Days"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/stats/overview":{"get":{"tags":["usage"],"summary":"Overview","operationId":"overview_v1_stats_overview_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}}},"/v1/storage":{"get":{"tags":["storage"],"summary":"List Storage","operationId":"list_storage_v1_storage_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}},"post":{"tags":["storage"],"summary":"Create Storage","operationId":"create_storage_v1_storage_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/DestinationCreate"}}},"required":true},"responses":{"201":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/storage/{dest_id}":{"put":{"tags":["storage"],"summary":"Update Storage","operationId":"update_storage_v1_storage__dest_id__put","parameters":[{"name":"dest_id","in":"path","required":true,"schema":{"type":"string","title":"Dest Id"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/DestinationUpdate"}}}},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"delete":{"tags":["storage"],"summary":"Delete Storage","operationId":"delete_storage_v1_storage__dest_id__delete","parameters":[{"name":"dest_id","in":"path","required":true,"schema":{"type":"string","title":"Dest Id"}}],"responses":{"204":{"description":"Successful Response"},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/storage/test":{"post":{"tags":["storage"],"summary":"Test Storage","description":"连接测试: head_bucket + 写探针对象后删除 (测写权限)。","operationId":"test_storage_v1_storage_test_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/DestinationTest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/storage/{dest_id}/test":{"post":{"tags":["storage"],"summary":"Test Saved Storage","operationId":"test_saved_storage_v1_storage__dest_id__test_post","parameters":[{"name":"dest_id","in":"path","required":true,"schema":{"type":"string","title":"Dest Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/webhooks":{"get":{"tags":["webhooks"],"summary":"List Webhooks","operationId":"list_webhooks_v1_webhooks_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}},"post":{"tags":["webhooks"],"summary":"Create Webhook","operationId":"create_webhook_v1_webhooks_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WebhookCreate"}}},"required":true},"responses":{"201":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/webhooks/{endpoint_id}":{"delete":{"tags":["webhooks"],"summary":"Delete Webhook","operationId":"delete_webhook_v1_webhooks__endpoint_id__delete","parameters":[{"name":"endpoint_id","in":"path","required":true,"schema":{"type":"string","title":"Endpoint Id"}}],"responses":{"204":{"description":"Successful Response"},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/subscription/checkout":{"post":{"tags":["subscription"],"summary":"Checkout","operationId":"checkout_v1_subscription_checkout_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CheckoutRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/subscription/topup":{"post":{"tags":["subscription"],"summary":"Topup","operationId":"topup_v1_subscription_topup_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TopupRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/subscription/portal":{"post":{"tags":["subscription"],"summary":"Portal","operationId":"portal_v1_subscription_portal_post","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}}},"/v1/subscription/current":{"get":{"tags":["subscription"],"summary":"Current","operationId":"current_v1_subscription_current_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}}},"/api/webhooks/stripe":{"post":{"tags":["webhooks"],"summary":"Stripe Webhook","description":"Stripe webhook 入口. 使用原始 body 验证 stripe-signature.","operationId":"stripe_webhook_api_webhooks_stripe_post","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}}},"/health":{"get":{"summary":"Health","operationId":"health_health_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}}}},"components":{"schemas":{"CheckoutRequest":{"properties":{"plan":{"type":"string","enum":["developer","growth","scale"],"title":"Plan"},"interval":{"type":"string","enum":["month","year"],"title":"Interval","default":"month"}},"type":"object","required":["plan"],"title":"CheckoutRequest"},"DestinationCreate":{"properties":{"name":{"type":"string","title":"Name","default":"My bucket"},"provider":{"type":"string","enum":["s3","r2","gcs","s3_compatible"],"title":"Provider","default":"s3"},"endpoint":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Endpoint"},"region":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Region"},"bucket":{"type":"string","minLength":1,"title":"Bucket"},"path_prefix":{"type":"string","title":"Path Prefix","default":"youtube/{video_id}/"},"access_key_id":{"type":"string","minLength":1,"title":"Access Key Id"},"secret_access_key":{"type":"string","minLength":1,"title":"Secret Access Key"},"is_default":{"type":"boolean","title":"Is Default","default":false}},"type":"object","required":["bucket","access_key_id","secret_access_key"],"title":"DestinationCreate"},"DestinationSpec":{"properties":{"type":{"type":"string","enum":["url","s3","r2","gcs","s3_compatible"],"title":"Type","default":"url"},"id":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Id"},"bucket":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Bucket"},"region":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Region"},"endpoint":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Endpoint"},"path":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Path"},"access_key_id":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Access Key Id"},"secret_access_key":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Secret Access Key"}},"type":"object","title":"DestinationSpec","description":"交付目标: {type: url} → 平台 CDN 链接; {type: s3|r2|gcs|s3_compatible, id} → 已保存连接;\n{type: s3|..., bucket/access_key_id/...} → 内联凭据 (保存为该用户连接)。"},"DestinationTest":{"properties":{"id":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Id"},"provider":{"type":"string","enum":["s3","r2","gcs","s3_compatible"],"title":"Provider","default":"s3"},"endpoint":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Endpoint"},"region":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Region"},"bucket":{"type":"string","title":"Bucket"},"access_key_id":{"type":"string","title":"Access Key Id"},"secret_access_key":{"type":"string","title":"Secret Access Key"},"path_prefix":{"type":"string","title":"Path Prefix","default":"youtube/"}},"type":"object","required":["bucket","access_key_id","secret_access_key"],"title":"DestinationTest"},"DestinationUpdate":{"properties":{"name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Name"},"endpoint":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Endpoint"},"region":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Region"},"path_prefix":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Path Prefix"},"access_key_id":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Access Key Id"},"secret_access_key":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Secret Access Key"},"is_default":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Is Default"}},"type":"object","title":"DestinationUpdate"},"DownloadCreate":{"properties":{"url":{"type":"string","title":"Url","description":"Full URL or bare video ID"},"format":{"type":"string","title":"Format","description":"Quality tier: \"144p\"…\"2160p\" or \"mp3\"","default":"720p"},"quality":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Quality","description":"Legacy: mp4 quality/bitrate when format=mp4|mp3"},"trim":{"anyOf":[{"$ref":"#/components/schemas/TrimSpec"},{"type":"null"}]},"destination":{"anyOf":[{"$ref":"#/components/schemas/DestinationSpec"},{"type":"null"}]},"webhook_url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Webhook Url"},"metadata":{"type":"boolean","title":"Metadata","default":false}},"type":"object","required":["url"],"title":"DownloadCreate"},"HTTPValidationError":{"properties":{"detail":{"items":{"$ref":"#/components/schemas/ValidationError"},"type":"array","title":"Detail"}},"type":"object","title":"HTTPValidationError"},"InfoRequest":{"properties":{"url":{"type":"string","title":"Url","description":"Full URL or bare video ID"}},"type":"object","required":["url"],"title":"InfoRequest"},"KeyCreate":{"properties":{"name":{"type":"string","title":"Name","default":"default"},"env":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Env"}},"type":"object","title":"KeyCreate"},"TopupRequest":{"properties":{"amount_usd":{"type":"integer","maximum":10000.0,"minimum":5.0,"title":"Amount Usd"}},"type":"object","required":["amount_usd"],"title":"TopupRequest"},"TrimSpec":{"properties":{"start":{"type":"number","title":"Start","description":"Start time in seconds (inclusive)"},"end":{"type":"number","title":"End","description":"End time in seconds (exclusive)"}},"type":"object","required":["start","end"],"title":"TrimSpec"},"ValidationError":{"properties":{"loc":{"items":{"anyOf":[{"type":"string"},{"type":"integer"}]},"type":"array","title":"Location"},"msg":{"type":"string","title":"Message"},"type":{"type":"string","title":"Error Type"},"input":{"title":"Input"},"ctx":{"type":"object","title":"Context"}},"type":"object","required":["loc","msg","type"],"title":"ValidationError"},"WebhookCreate":{"properties":{"url":{"type":"string","minLength":5,"title":"Url"},"events":{"anyOf":[{"items":{"type":"string"},"type":"array"},{"type":"null"}],"title":"Events"}},"type":"object","required":["url"],"title":"WebhookCreate"}}}}
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "VideoFetch API",
+    "description": "VideoFetch is a video ingestion API. Send a video URL plus a format and we deliver the MP4/MP3 — optionally trimmed to an exact window — to your own object storage or to a platform delivery link.\n\nAuthentication: `Authorization: Bearer vf_live_sk_...` (API key) or a signed-in dashboard session token for account-management endpoints.\n\nTypical flow:\n  1. POST /v1/downloads            → 202 { id: \"dl_xxxxxxxxxx\", status: \"queued\" }\n  2. GET  /v1/downloads/{id}       → poll until completed | failed\n  3. Receive download.completed on your webhook, if you registered one\n\nFailed jobs are never charged, and every attempt is recorded on the job. Full guides: https://vidfetch.dev (Documentation).",
+    "version": "0.3.0",
+    "license": {
+      "name": "Proprietary"
+    }
+  },
+  "paths": {
+    "/v1/downloads": {
+      "post": {
+        "tags": [
+          "downloads"
+        ],
+        "summary": "Create Download",
+        "operationId": "create_download_v1_downloads_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DownloadCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "downloads"
+        ],
+        "summary": "List Downloads",
+        "operationId": "list_downloads_v1_downloads_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Search title/url/id",
+              "title": "Q"
+            },
+            "description": "Search title/url/id"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/downloads/{download_id}": {
+      "get": {
+        "tags": [
+          "downloads"
+        ],
+        "summary": "Get Download",
+        "operationId": "get_download_v1_downloads__download_id__get",
+        "parameters": [
+          {
+            "name": "download_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Download Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "downloads"
+        ],
+        "summary": "Delete Download",
+        "operationId": "delete_download_v1_downloads__download_id__delete",
+        "parameters": [
+          {
+            "name": "download_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Download Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/info": {
+      "post": {
+        "tags": [
+          "info"
+        ],
+        "summary": "Video Info",
+        "operationId": "video_info_v1_info_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InfoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/demo/download": {
+      "post": {
+        "tags": [
+          "demo"
+        ],
+        "summary": "Demo Download",
+        "operationId": "demo_download_v1_demo_download_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/demo/{job_id}": {
+      "get": {
+        "tags": [
+          "demo"
+        ],
+        "summary": "Demo Job",
+        "operationId": "demo_job_v1_demo__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/status": {
+      "get": {
+        "tags": [
+          "status"
+        ],
+        "summary": "Get Status",
+        "description": "24h/7d/30d/90d ( insufficient_data)",
+        "operationId": "get_status_v1_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/keys": {
+      "post": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "Create Key",
+        "description": "Create an API key for the signed-in account. Usage draws on the account plan quota.",
+        "operationId": "create_key_v1_keys_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeyCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "List Keys",
+        "operationId": "list_keys_v1_keys_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/keys/{key_id}": {
+      "delete": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "Revoke Key",
+        "operationId": "revoke_key_v1_keys__key_id__delete",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/usage": {
+      "get": {
+        "tags": [
+          "usage"
+        ],
+        "summary": "Get Usage",
+        "description": "Account-level quota snapshot (identical to the dashboard overview), alert state and concurrency headroom.",
+        "operationId": "get_usage_v1_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/usage/alerts": {
+      "get": {
+        "tags": [
+          "usage"
+        ],
+        "summary": "Get Usage Alerts",
+        "description": "Live alert state plus the alerts already fired this month (each threshold fires once per month per account).",
+        "operationId": "get_usage_alerts_v1_usage_alerts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/usage/summary": {
+      "get": {
+        "tags": [
+          "usage"
+        ],
+        "summary": "Get Usage Summary",
+        "operationId": "get_usage_summary_v1_usage_summary_get",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "default": 30,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/stats/overview": {
+      "get": {
+        "tags": [
+          "usage"
+        ],
+        "summary": "Overview",
+        "operationId": "overview_v1_stats_overview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/storage": {
+      "get": {
+        "tags": [
+          "storage"
+        ],
+        "summary": "List Storage",
+        "operationId": "list_storage_v1_storage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "storage"
+        ],
+        "summary": "Create Storage",
+        "operationId": "create_storage_v1_storage_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DestinationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/storage/{dest_id}": {
+      "put": {
+        "tags": [
+          "storage"
+        ],
+        "summary": "Update Storage",
+        "operationId": "update_storage_v1_storage__dest_id__put",
+        "parameters": [
+          {
+            "name": "dest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dest Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DestinationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "storage"
+        ],
+        "summary": "Delete Storage",
+        "operationId": "delete_storage_v1_storage__dest_id__delete",
+        "parameters": [
+          {
+            "name": "dest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dest Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/storage/test": {
+      "post": {
+        "tags": [
+          "storage"
+        ],
+        "summary": "Test Storage",
+        "description": "Connection test: check list permission, write a small probe object, then delete it — write permission is verified, not assumed.",
+        "operationId": "test_storage_v1_storage_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DestinationTest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/storage/{dest_id}/test": {
+      "post": {
+        "tags": [
+          "storage"
+        ],
+        "summary": "Test Saved Storage",
+        "operationId": "test_saved_storage_v1_storage__dest_id__test_post",
+        "parameters": [
+          {
+            "name": "dest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dest Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks": {
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "List Webhooks",
+        "operationId": "list_webhooks_v1_webhooks_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Create Webhook",
+        "operationId": "create_webhook_v1_webhooks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/{endpoint_id}/deliveries": {
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "List Deliveries",
+        "description": "Recent deliveries for one endpoint, plus delivery-health summary.\n\nDelivery semantics: **at-least-once** — the same event id can arrive more than once, so\nde-duplicate with the `X-VideoFetch-Delivery` header. Ordering is **not** guaranteed;\nsort by `seq` and/or `created_at` if you need a stable order.",
+        "operationId": "list_deliveries_v1_webhooks__endpoint_id__deliveries_get",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Endpoint Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/deliveries/{event_id}/replay": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Replay Delivery",
+        "description": "Re-queue one recorded delivery so it is attempted again.\n\nUseful after fixing your endpoint: a manual replay does not consume the automatic\nretry budget.",
+        "operationId": "replay_delivery_v1_webhooks_deliveries__event_id__replay_post",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/{endpoint_id}/test": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Test Webhook",
+        "description": "Send a ping event so you can confirm your endpoint is reachable and your signature verification works.",
+        "operationId": "test_webhook_v1_webhooks__endpoint_id__test_post",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Endpoint Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/{endpoint_id}": {
+      "delete": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Delete Webhook",
+        "operationId": "delete_webhook_v1_webhooks__endpoint_id__delete",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Endpoint Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DayUsage": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "bytes": {
+            "type": "integer",
+            "title": "Bytes"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "bytes"
+        ],
+        "title": "DayUsage"
+      },
+      "DemoRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Video URL"
+          },
+          "format": {
+            "type": "string",
+            "title": "Format",
+            "description": "One of mp3 | 144p | 240p | 360p",
+            "default": "360p"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "DemoRequest"
+      },
+      "DestinationCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": "My bucket"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "s3",
+              "r2",
+              "gcs",
+              "s3_compatible"
+            ],
+            "title": "Provider",
+            "default": "s3"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "bucket": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Bucket"
+          },
+          "path_prefix": {
+            "type": "string",
+            "title": "Path Prefix",
+            "default": "youtube/{video_id}/"
+          },
+          "access_key_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Access Key Id"
+          },
+          "secret_access_key": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Secret Access Key"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "bucket",
+          "access_key_id",
+          "secret_access_key"
+        ],
+        "title": "DestinationCreate"
+      },
+      "DestinationSpec": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "url",
+              "s3",
+              "r2",
+              "gcs",
+              "s3_compatible"
+            ],
+            "title": "Type",
+            "default": "url"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "bucket": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "access_key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Key Id"
+          },
+          "secret_access_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Access Key"
+          }
+        },
+        "type": "object",
+        "title": "DestinationSpec",
+        "description": "Delivery target: {type: url} → platform delivery link; {type: s3|r2|gcs|s3_compatible, id} → saved connection;\n{type: s3|..., bucket/access_key_id/...} →   ( )"
+      },
+      "DestinationTest": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "s3",
+              "r2",
+              "gcs",
+              "s3_compatible"
+            ],
+            "title": "Provider",
+            "default": "s3"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "bucket": {
+            "type": "string",
+            "title": "Bucket"
+          },
+          "access_key_id": {
+            "type": "string",
+            "title": "Access Key Id"
+          },
+          "secret_access_key": {
+            "type": "string",
+            "title": "Secret Access Key"
+          },
+          "path_prefix": {
+            "type": "string",
+            "title": "Path Prefix",
+            "default": "youtube/"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bucket",
+          "access_key_id",
+          "secret_access_key"
+        ],
+        "title": "DestinationTest"
+      },
+      "DestinationUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "path_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Prefix"
+          },
+          "access_key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Key Id"
+          },
+          "secret_access_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Access Key"
+          },
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default"
+          }
+        },
+        "type": "object",
+        "title": "DestinationUpdate"
+      },
+      "DownloadAttemptOut": {
+        "properties": {
+          "attempt_no": {
+            "type": "integer",
+            "title": "Attempt No"
+          },
+          "strategy": {
+            "type": "string",
+            "title": "Strategy"
+          },
+          "egress": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Egress"
+          },
+          "result": {
+            "type": "string",
+            "title": "Result"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attempt_no",
+          "strategy",
+          "result"
+        ],
+        "title": "DownloadAttemptOut"
+      },
+      "DownloadCreate": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Full URL or bare video ID"
+          },
+          "format": {
+            "type": "string",
+            "title": "Format",
+            "description": "Quality tier: \"144p\"…\"2160p\" or \"mp3\"",
+            "default": "720p"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality",
+            "description": "Legacy: mp4 quality/bitrate when format=mp4|mp3"
+          },
+          "trim": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrimSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trim_start": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trim Start",
+            "description": "Alias of trim.start (seconds)"
+          },
+          "trim_end": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trim End",
+            "description": "Alias of trim.end (seconds)"
+          },
+          "destination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DestinationSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "webhook_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook Url"
+          },
+          "metadata": {
+            "type": "boolean",
+            "title": "Metadata",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "DownloadCreate"
+      },
+      "DownloadList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DownloadOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "DownloadList"
+      },
+      "DownloadOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "format": {
+            "type": "string",
+            "title": "Format"
+          },
+          "progress": {
+            "type": "integer",
+            "title": "Progress",
+            "default": 0
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "video_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Id"
+          },
+          "channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel"
+          },
+          "upload_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upload Date"
+          },
+          "thumbnail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "trim": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrimSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "destination_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Type"
+          },
+          "download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Url"
+          },
+          "download_url_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Url Expires At"
+          },
+          "storage_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Key"
+          },
+          "processing_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processing Time Ms"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "attempts": {
+            "type": "integer",
+            "title": "Attempts",
+            "default": 0
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "queue_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Position"
+          },
+          "ahead_of_you": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ahead Of You"
+          },
+          "estimated_wait_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Wait Seconds"
+          },
+          "estimated_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Bytes"
+          },
+          "attempt_details": {
+            "items": {
+              "$ref": "#/components/schemas/DownloadAttemptOut"
+            },
+            "type": "array",
+            "title": "Attempt Details",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "url",
+          "format",
+          "created_at"
+        ],
+        "title": "DownloadOut"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "InfoRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Full URL or bare video ID"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "InfoRequest"
+      },
+      "KeyCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": "default"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env"
+          }
+        },
+        "type": "object",
+        "title": "KeyCreate"
+      },
+      "TrimSpec": {
+        "properties": {
+          "start": {
+            "type": "number",
+            "title": "Start",
+            "description": "Start time in seconds (inclusive)"
+          },
+          "end": {
+            "type": "number",
+            "title": "End",
+            "description": "End time in seconds (exclusive)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "TrimSpec"
+      },
+      "UsageOut": {
+        "properties": {
+          "key_id": {
+            "type": "string",
+            "title": "Key Id"
+          },
+          "plan": {
+            "type": "string",
+            "title": "Plan"
+          },
+          "quota_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Gb"
+          },
+          "used_bytes": {
+            "type": "integer",
+            "title": "Used Bytes"
+          },
+          "used_gb": {
+            "type": "number",
+            "title": "Used Gb"
+          },
+          "remaining_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Gb"
+          },
+          "key_used_bytes": {
+            "type": "integer",
+            "title": "Key Used Bytes",
+            "default": 0
+          },
+          "key_used_gb": {
+            "type": "number",
+            "title": "Key Used Gb",
+            "default": 0.0
+          },
+          "payg_balance_cents": {
+            "type": "integer",
+            "title": "Payg Balance Cents",
+            "default": 0
+          },
+          "payg_rate_usd_per_gb": {
+            "type": "number",
+            "title": "Payg Rate Usd Per Gb",
+            "default": 0.5
+          },
+          "account_used_bytes_month": {
+            "type": "integer",
+            "title": "Account Used Bytes Month",
+            "default": 0
+          },
+          "account_used_gb_month": {
+            "type": "number",
+            "title": "Account Used Gb Month",
+            "default": 0.0
+          },
+          "used_pct": {
+            "type": "number",
+            "title": "Used Pct",
+            "default": 0.0
+          },
+          "month": {
+            "type": "string",
+            "title": "Month",
+            "default": ""
+          },
+          "active_jobs": {
+            "type": "integer",
+            "title": "Active Jobs",
+            "default": 0
+          },
+          "concurrency_limit": {
+            "type": "integer",
+            "title": "Concurrency Limit",
+            "default": 0
+          },
+          "alert_level": {
+            "type": "string",
+            "title": "Alert Level",
+            "default": "ok"
+          },
+          "alert_message": {
+            "type": "string",
+            "title": "Alert Message",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "key_id",
+          "plan",
+          "quota_gb",
+          "used_bytes",
+          "used_gb",
+          "remaining_gb"
+        ],
+        "title": "UsageOut"
+      },
+      "UsageSummary": {
+        "properties": {
+          "key_id": {
+            "type": "string",
+            "title": "Key Id"
+          },
+          "days": {
+            "type": "integer",
+            "title": "Days"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "title": "Total Bytes"
+          },
+          "total_gb": {
+            "type": "number",
+            "title": "Total Gb"
+          },
+          "quota_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Gb"
+          },
+          "by_day": {
+            "items": {
+              "$ref": "#/components/schemas/DayUsage"
+            },
+            "type": "array",
+            "title": "By Day"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key_id",
+          "days",
+          "total_bytes",
+          "total_gb",
+          "quota_gb",
+          "by_day"
+        ],
+        "title": "UsageSummary"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WebhookCreate": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "minLength": 5,
+            "title": "Url"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "WebhookCreate"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API key (vf_live_sk_...) for server-to-server calls, or a signed-in dashboard session token for account-management endpoints."
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.vidfetch.dev",
+      "description": "Production"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "downloads",
+      "description": "Create, inspect and cancel download jobs."
+    },
+    {
+      "name": "info",
+      "description": "Free source metadata (no quota consumed)."
+    },
+    {
+      "name": "usage",
+      "description": "Quota, alerts and per-day usage."
+    },
+    {
+      "name": "keys",
+      "description": "API key management."
+    },
+    {
+      "name": "storage",
+      "description": "Destination connections and connection tests."
+    },
+    {
+      "name": "webhooks",
+      "description": "Webhook endpoint management."
+    }
+  ]
+}

@@ -137,3 +137,47 @@ func TestInfoLookup(t *testing.T) {
 		t.Fatalf("unexpected formats: %+v", info.Formats)
 	}
 }
+
+func TestDownloadQueueFields(t *testing.T) {
+	queued := downloadJSON("queued", map[string]any{
+		"queue_position": 4, "ahead_of_you": 3, "estimated_wait_seconds": 90,
+	})
+
+	_, err := json.Marshal(queued) // sanity: the fixture is valid JSON
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dl Download
+	if err := json.Unmarshal(mustJSON(t, queued), &dl); err != nil {
+		t.Fatalf("unmarshal queued: %v", err)
+	}
+	if dl.QueuePosition == nil || *dl.QueuePosition != 4 {
+		t.Fatalf("queue_position = %v, want 4", dl.QueuePosition)
+	}
+	if dl.AheadOfYou == nil || *dl.AheadOfYou != 3 {
+		t.Fatalf("ahead_of_you = %v, want 3", dl.AheadOfYou)
+	}
+	if dl.EstimatedWaitSeconds == nil || *dl.EstimatedWaitSeconds != 90 {
+		t.Fatalf("estimated_wait_seconds = %v, want 90", dl.EstimatedWaitSeconds)
+	}
+
+	// Non-queued states serialise these fields as null → nil pointers.
+	var done Download
+	if err := json.Unmarshal(mustJSON(t, downloadJSON("completed", map[string]any{
+		"queue_position": nil, "ahead_of_you": nil, "estimated_wait_seconds": nil,
+	})), &done); err != nil {
+		t.Fatalf("unmarshal completed: %v", err)
+	}
+	if done.QueuePosition != nil || done.AheadOfYou != nil || done.EstimatedWaitSeconds != nil {
+		t.Fatalf("queue fields must be nil when null: %+v", done)
+	}
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}

@@ -33,6 +33,22 @@ print(result.size_bytes, result.cost_usd)
 result = client.downloads.create_and_wait(url=..., format="1080p")
 ```
 
+Save the artifact locally. Created with no destination configured, the job completes
+with a time-limited `download_url`; `download_to` streams it to disk and returns the
+absolute path of the saved file:
+
+```python
+path = client.downloads.download_to(result.id)          # ./<title>.mp4 in the current dir
+path = client.downloads.download_to(result.id, "out/clip.mp4")   # explicit file path
+path = client.downloads.download_to(result.id, "out/")           # existing directory
+print(path)   # "/abs/path/out/clip.mp4"
+```
+
+The default name is the sanitized title (or the job id) plus `.mp3` for `format="mp3"`
+and `.mp4` otherwise. The self-authorizing link is fetched without your API key, and an
+expired link is re-signed and retried once. A job that is not `completed` raises
+`DownloadNotCompletedError`.
+
 Async (FastAPI / Next.js backends):
 
 ```python
@@ -88,6 +104,8 @@ All SDK errors derive from `videofetch.VideoFetchError`:
 | `NotFoundError` | job/connection not found (404) |
 | `RateLimitError` | slow down (429) |
 | `JobFailedError` | job reached `failed` — **never charged** |
+| `DownloadNotCompletedError` | `download_to()` called before the job is `completed` |
+| `DownloadURLUnavailableError` | completed job has no `download_url` (bucket destination) |
 
 ## Serverless warning
 

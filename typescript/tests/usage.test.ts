@@ -84,4 +84,19 @@ describe("usage resource", () => {
     expect(alerts.fired).toHaveLength(1);
     expect(alerts.fired[0].delivered).toBe(true);
   });
+
+  it("get() surfaces account-level used_* alongside key_used_* (v0.3.0)", async () => {
+    const fetchMock = makeFetch(async () =>
+      jsonResponse(200, usageBody({
+        used_bytes: 5_000_000_000, used_gb: 5.0,
+        key_used_bytes: 2_000_000_000, key_used_gb: 2.0,
+        account_used_bytes_month: 5_000_000_000, account_used_gb_month: 5.0,
+        used_pct: 50.0,
+      })));
+    const client = new VideoFetch({ apiKey: "k", baseUrl: "http://mock", fetch: fetchMock });
+    const usage = await client.usage.get();
+    expect(usage.used_gb).toBe(5.0);        // account-level usage for the month
+    expect(usage.key_used_gb).toBe(2.0);    // this key's own usage
+    expect(usage.key_used_bytes).toBe(2_000_000_000);
+  });
 });
