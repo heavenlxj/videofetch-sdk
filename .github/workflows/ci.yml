@@ -65,7 +65,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Installs the published SDK from PyPI at the version pinned in pyproject.toml.
+      # Install the SDK from this checkout, not from PyPI: mcp/pyproject.toml pins a
+      # version that only exists once the SDK release has landed, so relying on PyPI made CI
+      # fail on the very commit that introduces the bump (observed on 9265bc4). The release
+      # workflow deliberately does install from PyPI — there we *want* to prove the MCP server
+      # works against the published SDK.
+      - run: pip install -e ../python
       - run: pip install -e ".[dev]"
       - run: pytest -q
       - run: python -m videofetch_mcp.server --selftest
