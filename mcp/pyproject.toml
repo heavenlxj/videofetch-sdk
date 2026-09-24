@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "videofetch-mcp"
+version = "0.1.0"
+description = "VideoFetch MCP server — let any AI agent download video/audio straight into your own object storage"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "VideoFetch", email = "dev@vidfetch.dev" }]
+keywords = [
+  "mcp", "model-context-protocol", "agent", "video", "download", "youtube",
+  "mp3", "trim", "s3", "r2", "gcs", "videofetch",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+# mcp: 官方 Python SDK (FastMCP)。1.27 起 ToolAnnotations/structured output 稳定。
+# videofetch-sdk: 复用官方 SDK, 不自己拼 HTTP (错误映射/重试/直链过期重签都在里面)。
+dependencies = [
+  "mcp>=1.27,<3",
+  "videofetch-sdk>=0.3.0",
+]
+
+[project.scripts]
+videofetch-mcp = "videofetch_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/heavenlxj/videofetch-sdk/tree/main/mcp"
+Documentation = "https://www.vidfetch.dev/docs/mcp-overview"
+Source = "https://github.com/heavenlxj/videofetch-sdk/tree/main/mcp"
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-asyncio>=0.23"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/videofetch_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
