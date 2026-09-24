@@ -26,7 +26,9 @@ classifiers = [
 # mcp: 官方 Python SDK (FastMCP)。1.27 起 ToolAnnotations/structured output 稳定。
 # videofetch-sdk: 复用官方 SDK, 不自己拼 HTTP (错误映射/重试/直链过期重签都在里面)。
 dependencies = [
-  "mcp>=1.27,<3",
+  # mcp 2.x renamed FastMCP to MCPServer (mcp.server.mcpserver) and changed other APIs —
+  # server.py is written against the 1.x API, so cap below 2 until we migrate and test on 2.x.
+  "mcp>=1.27,<2",
   "videofetch-sdk>=0.4.0",
 ]
 

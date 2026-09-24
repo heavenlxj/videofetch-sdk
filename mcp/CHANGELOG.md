@@ -15,4 +15,8 @@ First release.
 - `save_to` is confined to `VIDEOFETCH_MCP_OUTPUT_DIR`; storage credentials are never accepted
   (use a dashboard-created `destination_id`).
 - `--selftest` verifies key + connectivity without an MCP client.
-- Tests: 32 offline (in-memory API + real MCP protocol handshake) and an opt-in live suite.
+- Requires `videofetch-sdk>=0.4.0` and `mcp>=1.27,<2`. The `mcp` cap is deliberate: 2.x renamed
+  `FastMCP` to `MCPServer` (`mcp.server.mcpserver`) and changed other APIs, so an unpinned install
+  imports a module that no longer exists. v2 support will come as its own verified release.
+- Tests: 35 offline (in-memory API + real MCP protocol handshake + version guard) and an opt-in
+  live suite.
