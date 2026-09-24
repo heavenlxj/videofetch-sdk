@@ -73,4 +73,16 @@ jobs:
       - run: pip install -e ../python
       - run: pip install -e ".[dev]"
       - run: pytest -q
-      - run: python -m videofetch_mcp.server --selftest
+      # CI has no API key, and the selftest deliberately exits 2 rather than reporting a green
+      # run for an unconfigured server. Assert that, plus the tool manifest — a wiring
+      # regression that dropped a tool would otherwise still look fine.
+      - name: selftest fails loudly without a key (and lists all six tools)
+        run: |
+          set +e
+          python -m videofetch_mcp.server --selftest > selftest.out 2>&1
+          code=$?
+          set -e
+          cat selftest.out
+          test "$code" -eq 2 || { echo "expected exit 2 with no key, got $code"; exit 1; }
+          grep -q "key    : MISSING" selftest.out
+          test "$(grep -c '^  - ' selftest.out)" -eq 6 || { echo "expected 6 tools"; exit 1; }
