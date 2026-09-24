@@ -19,6 +19,8 @@ function usageBody(overrides: Record<string, unknown> = {}): Record<string, unkn
     account_used_bytes_month: 0, account_used_gb_month: 0.0, used_pct: 0.0,
     month: "2026-09", active_jobs: 0, concurrency_limit: 5,
     alert_level: "ok", alert_message: "",
+    plan_remaining_gb: 1.0, pack_gb: 0.0, pack_remaining_gb: 0.0,
+    period_start: "2026-09-01T00:00:00Z", period_end: "2026-10-01T00:00:00Z",
     ...overrides,
   };
 }
@@ -98,5 +100,28 @@ describe("usage resource", () => {
     expect(usage.used_gb).toBe(5.0);        // account-level usage for the month
     expect(usage.key_used_gb).toBe(2.0);    // this key's own usage
     expect(usage.key_used_bytes).toBe(2_000_000_000);
+  });
+
+  it("get() keeps key_id null when the figures came from a dashboard session", async () => {
+    const fetchMock = makeFetch(async () => jsonResponse(200, usageBody({ key_id: null })));
+    const client = new VideoFetch({ apiKey: "k", baseUrl: "http://mock", fetch: fetchMock });
+    const usage = await client.usage.get();
+    expect(usage.key_id).toBeNull();
+  });
+
+  it("get() surfaces the pack/plan split and the billing period", async () => {
+    const fetchMock = makeFetch(async () =>
+      jsonResponse(200, usageBody({
+        quota_gb: 100.0, remaining_gb: 60.5,
+        plan_remaining_gb: 50.5, pack_gb: 10.0, pack_remaining_gb: 10.0,
+      })));
+    const client = new VideoFetch({ apiKey: "k", baseUrl: "http://mock", fetch: fetchMock });
+    const usage = await client.usage.get();
+    expect(usage.plan_remaining_gb).toBe(50.5);   // subscription quota, packs excluded
+    expect(usage.pack_gb).toBe(10.0);
+    expect(usage.pack_remaining_gb).toBe(10.0);
+    expect(usage.plan_remaining_gb + usage.pack_remaining_gb).toBe(usage.remaining_gb);
+    expect(usage.period_start).toBe("2026-09-01T00:00:00Z");
+    expect(usage.period_end).toBe("2026-10-01T00:00:00Z");
   });
 });

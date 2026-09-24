@@ -142,3 +142,43 @@ def test_queue_hints_are_none_when_not_queued():
     assert detail.queue_position is None
     assert detail.ahead_of_you is None
     assert detail.estimated_wait_seconds is None
+
+
+# ── destination ────────────────────────────────────────────────────────────────────────────
+# The API resolves a saved connection from its id alone (the provider, bucket and credentials
+# live on the connection), so the SDK must forward the dict untouched and never inject a
+# default of its own. A fabricated "type" would either be ignored or, for an empty value,
+# rejected as an unknown enum member.
+
+def _capture_body(**create_kwargs) -> dict:
+    seen: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        import json as _json
+        seen.update(_json.loads(req.read().decode()))
+        return httpx.Response(202, json=_download_json("queued"))
+
+    c = _client(handler)
+    c.downloads.create("https://www.youtube.com/watch?v=x", **create_kwargs)
+    return seen
+
+
+def test_destination_saved_connection_is_sent_as_bare_id():
+    body = _capture_body(destination={"id": "conn_9f1c2a34"})
+    assert body["destination"] == {"id": "conn_9f1c2a34"}
+
+
+def test_destination_keeps_provider_when_given():
+    body = _capture_body(destination={"type": "s3", "id": "conn_9f1c2a34"})
+    assert body["destination"] == {"type": "s3", "id": "conn_9f1c2a34"}
+
+
+def test_destination_inline_credentials_pass_through():
+    inline = {"type": "s3", "bucket": "b", "access_key_id": "k", "secret_access_key": "s"}
+    body = _capture_body(destination=inline)
+    assert body["destination"] == inline
+
+
+def test_destination_omitted_is_not_sent():
+    body = _capture_body(format="720p")
+    assert "destination" not in body

@@ -1,0 +1,43 @@
+name: release-mcp
+
+on:
+  push:
+    tags: ["mcp-v*"]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The MCP server is a thin layer over the SDK, so the SDK must already be on
+      # PyPI at the version pinned in pyproject.toml — publish the SDK tag first.
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+      - run: pip install build
+      - run: python -m build
+      - name: Verify the wheel actually declares the console script
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          whl = glob.glob("dist/*.whl")[0]
+          with zipfile.ZipFile(whl) as z:
+              entry = [n for n in z.namelist() if n.endswith("entry_points.txt")]
+              assert entry, f"no entry_points.txt in {whl}"
+              body = z.read(entry[0]).decode()
+          assert "videofetch-mcp" in body, body
+          print(body)
+          PY
+      - name: Publish to PyPI (trusted publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: mcp/dist/

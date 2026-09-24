@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.4.0 — 2026-09-24
+
+Added
+- **`Usage` gained the account-level fields the API already returns:** `plan_remaining_gb`
+  (subscription allowance left, excluding top-up packs), `pack_gb` / `pack_remaining_gb` (the
+  packs bought for the current period) and `period_start` / `period_end`. With `remaining_gb`
+  they say exactly where the remaining allowance comes from.
+
+Fixed
+- **`Usage.key_id` is `None` instead of the string `"None"` when the response carried `null`.**
+  A dashboard-session response has no API key to attribute, and `str(None)` was turning that
+  into a literal `"None"`. The field is now `Optional[str]`.
+- **A saved storage destination can be a bare id.** `destination={"id": "..."}` is a
+  first-class form: the provider — along with the bucket, region and credentials — is read from
+  the connection, so a caller (and in particular an agent) no longer has to know, or repeat, the
+  provider in the request. `type` is still accepted and is ignored when `id` is given.
+- `destination` is now documented field by field: `bucket`, `endpoint`, `region`,
+  `access_key_id`, `secret_access_key` and `path` are read only when a connection is being
+  created from inline credentials, and ignored when `id` is given. `path` is that new
+  connection's object key prefix (default `youtube/{video_id}/`) and was previously undocumented.
+
+Changed
+- `Usage.key_id` is now `Optional[str]`. API-key authenticated calls always carry a value; code
+  that assumed a plain `str` should handle `None`.
+
+Docs
+- New "Storage destinations" section in the README (saved connection vs inline credentials).
+
 ## 0.3.0 — 2026-09-22
 
 Added

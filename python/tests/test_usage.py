@@ -14,6 +14,8 @@ USAGE_JSON = {
     "account_used_bytes_month": 107374182, "account_used_gb_month": 0.1,
     "used_pct": 10.0, "month": "2026-09", "active_jobs": 2,
     "concurrency_limit": 5, "alert_level": "ok", "alert_message": "",
+    "plan_remaining_gb": 0.9, "pack_gb": 0.0, "pack_remaining_gb": 0.0,
+    "period_start": "2026-09-01T00:00:00Z", "period_end": "2026-10-01T00:00:00Z",
 }
 
 ALERTS_JSON = {
@@ -156,3 +158,25 @@ def test_async_usage_get_and_alerts():
     assert u.quota_gb == 1.0 and u.concurrency_limit == 5
     assert a.thresholds == [80, 95, 100] and a.topup_amounts == [10, 25, 50, 100]
     assert a.state.action == "upgrade"
+
+
+# ── account-level fields (v0.4.0 contract) ────────────────────────────────────────────────
+
+def test_key_id_null_becomes_none_not_the_string_none():
+    """A dashboard-session response carries key_id: null; str(None) used to yield "None"."""
+    u = Usage.from_dict({**USAGE_JSON, "key_id": None})
+    assert u.key_id is None
+
+
+def test_pack_and_period_fields_are_parsed():
+    u = Usage.from_dict({**USAGE_JSON, "plan_remaining_gb": 0.4, "pack_gb": 10.0,
+                         "pack_remaining_gb": 7.5})
+    assert (u.plan_remaining_gb, u.pack_gb, u.pack_remaining_gb) == (0.4, 10.0, 7.5)
+    assert u.period_start == "2026-09-01T00:00:00Z"
+    assert u.period_end == "2026-10-01T00:00:00Z"
+
+
+def test_pack_fields_default_when_absent():
+    u = Usage.from_dict({"plan": "free"})
+    assert (u.plan_remaining_gb, u.pack_gb, u.pack_remaining_gb) == (0.0, 0.0, 0.0)
+    assert u.period_start is None and u.period_end is None and u.key_id is None

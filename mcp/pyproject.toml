@@ -27,7 +27,7 @@ classifiers = [
 # videofetch-sdk: 复用官方 SDK, 不自己拼 HTTP (错误映射/重试/直链过期重签都在里面)。
 dependencies = [
   "mcp>=1.27,<3",
-  "videofetch-sdk>=0.3.0",
+  "videofetch-sdk>=0.4.0",
 ]
 
 [project.scripts]

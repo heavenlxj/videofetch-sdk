@@ -50,14 +50,27 @@ type TrimSpec struct {
 	End   *float64 `json:"end,omitempty"`
 }
 
-// DestinationSpec references a saved storage connection or inline credentials.
+// DestinationSpec references a saved storage connection or carries inline credentials.
+//
+// Saved connection — set ID only. The server reads the provider, bucket and credentials
+// from the connection, so Type is ignored whenever ID is set and should be left empty
+// (an empty Type would otherwise be sent and rejected as an invalid enum value).
+//
+// Inline credentials — set Type ("s3"|"r2"|"gcs"|"s3_compatible") along with Bucket,
+// AccessKeyID and SecretAccessKey; Type is required in this form, because without a
+// concrete provider the server falls back to "url" and ignores the bucket.
+//
+// Bucket, Endpoint, Region, AccessKeyID, SecretAccessKey and Path are only read in the
+// inline form — they describe the connection being created. Path is that connection's
+// object key prefix and defaults to "youtube/{video_id}/". All of them are ignored when
+// ID is set, since the saved connection already carries them.
 type DestinationSpec struct {
-	Type            string `json:"type"` // url|s3|r2|gcs|s3_compatible
+	Type            string `json:"type,omitempty"` // omit for a saved ID; required for inline credentials
 	ID              string `json:"id,omitempty"`
 	Bucket          string `json:"bucket,omitempty"`
 	Endpoint        string `json:"endpoint,omitempty"`
 	Region          string `json:"region,omitempty"`
-	Path            string `json:"path,omitempty"`
+	Path            string `json:"path,omitempty"` // inline only: key prefix of the new connection
 	AccessKeyID     string `json:"access_key_id,omitempty"`
 	SecretAccessKey string `json:"secret_access_key,omitempty"`
 }
@@ -310,7 +323,7 @@ func (c *Client) fetchToFile(ctx context.Context, link, target string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "videofetch-go/0.3.0")
+	req.Header.Set("User-Agent", "videofetch-go/0.4.0")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

@@ -85,6 +85,40 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
+## Storage destinations
+
+By default the platform keeps the finished file and returns a presigned `DownloadURL`
+(valid 7 days). Set `Destination` to have it written straight into your own bucket
+instead — the job then reports `StorageKey` as `user://<bucket>/<key>` and `DownloadURL`
+is nil. Billing is identical either way, and failed or cancelled jobs are never charged.
+
+```go
+// A saved connection. Connect the bucket once (Dashboard → Storage, or POST /v1/storage)
+// and reuse the id: the provider, bucket and credentials all come from the connection,
+// so you never have to know — or repeat — the provider.
+job, err := client.Downloads.Create(ctx, videofetch.DownloadCreateParams{
+    URL:         url,
+    Format:      videofetch.Format1080p,
+    Destination: &videofetch.DestinationSpec{ID: "conn_9f1c2a34"},
+})
+
+// Inline credentials. These are stored as a connection for your account and reused by
+// later jobs. Type is required in this form — without a concrete provider the server
+// falls back to "url" and would ignore the bucket.
+job, err = client.Downloads.Create(ctx, videofetch.DownloadCreateParams{
+    URL:    url,
+    Format: videofetch.Format1080p,
+    Destination: &videofetch.DestinationSpec{
+        Type:            "s3", // s3 | r2 | gcs | s3_compatible
+        Bucket:          "my-bucket",
+        Region:          "us-east-1",
+        AccessKeyID:     "...",
+        SecretAccessKey: "...",
+        Path:            "videos/", // optional; key prefix of the new connection
+    },
+})
+```
+
 ## Configuration
 
 - `NewClient(apiKey, opts)` — apiKey falls back to `VIDEOFETCH_API_KEY`.

@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.4.0 — 2026-09-24
+
+Added
+- `Usage` gained the account-level fields the API already returns: `PlanRemainingGB`
+  (subscription allowance left, excluding top-up packs), `PackGB` / `PackRemainingGB` (the packs
+  bought for the current period) and `PeriodStart` / `PeriodEnd`. With `RemainingGB` they say
+  exactly where the remaining allowance comes from.
+
+Fixed
+- **A saved storage destination can now be an id on its own.** `DestinationSpec.Type` is
+  `omitempty`. Before this, `&videofetch.DestinationSpec{ID: "..."}` marshalled as
+  `{"type":"","id":"..."}`, and the API rejected the empty enum value with `422`, so a connection
+  could only be used by also naming its provider — exactly the value a caller holding just an id
+  does not have. `Type` is still accepted and is ignored when `ID` is set.
+- Comments now record that `Bucket`, `Endpoint`, `Region`, `AccessKeyID`, `SecretAccessKey` and
+  `Path` are read only in the inline-credentials form, and are ignored when `ID` is set. `Path` is
+  the key prefix of the connection created from those credentials (default `youtube/{video_id}/`).
+
+Notes
+- `KeyID` is `""` when the figures came from a dashboard session rather than an API key (JSON
+  null leaves a string field at its zero value; the decode still succeeds). The field type is
+  unchanged, so no code breaks.
+- Wire-level change that is strictly more compatible: a request that previously carried
+  `"type": ""` now omits the field, which the API reads as its documented default.
+
 ## 0.3.0 — 2026-09-22
 
 Added

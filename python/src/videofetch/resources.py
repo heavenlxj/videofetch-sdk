@@ -149,6 +149,17 @@ class DownloadsResource:
         Clip window may be given either as ``trim=TrimSpec(start, end)`` or via
         the flat aliases ``trim_start`` / ``trim_end``. The two spellings are
         mutually exclusive in value — a conflict raises ValueError.
+
+        ``destination`` decides where the finished file lands:
+
+        * ``{"id": "..."}`` — a saved storage connection. The provider is read from
+          the connection, so you do not need to know it (``type`` is optional here
+          and ignored when the id is given).
+        * ``{"type": "s3"|"r2"|"gcs"|"s3_compatible", "bucket": ..., "access_key_id":
+          ..., "secret_access_key": ...}`` — inline credentials, stored as a
+          connection for your account. ``type`` is required in this form.
+        * omitted, or ``{"type": "url"}`` — the platform keeps the file and returns a
+          presigned ``download_url`` (7 days).
         """
         body: dict = {"url": url, "format": format, **extra}
         t = _build_trim(trim, trim_start, trim_end)

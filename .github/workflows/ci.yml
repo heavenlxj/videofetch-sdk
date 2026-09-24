@@ -36,6 +36,9 @@ jobs:
       - run: npm install -g "npm@^11.6"
       - run: npm ci
       - run: npm run typecheck
+      # tests/ is excluded from tsconfig.json, so the type-level destination contract
+      # gets its own project — otherwise a regression in the union is never checked.
+      - run: npm run typecheck:contract
       - run: npm test
       - run: npm run build
 
@@ -51,3 +54,18 @@ jobs:
           go-version: "1.22"
       - run: go vet ./...
       - run: go test ./...
+
+  mcp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Installs the published SDK from PyPI at the version pinned in pyproject.toml.
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+      - run: python -m videofetch_mcp.server --selftest

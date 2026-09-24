@@ -4,6 +4,11 @@ import "context"
 
 // Usage is the GET /v1/usage response: account-level quota snapshot + the live
 // alert level and concurrency window.
+//
+// QuotaGB/RemainingGB are the subscription quota. PlanRemainingGB excludes top-up
+// packs, while PackGB/PackRemainingGB cover the packs bought for the current period.
+// KeyID is empty when the figures were produced from a dashboard session rather than
+// an API key.
 type Usage struct {
 	KeyID            string   `json:"key_id"`
 	Plan             string   `json:"plan"`
@@ -13,6 +18,11 @@ type Usage struct {
 	KeyUsedBytes     int64    `json:"key_used_bytes"` // bytes used by this API key this month
 	KeyUsedGB        float64  `json:"key_used_gb"`    // GB used by this API key this month
 	RemainingGB      *float64 `json:"remaining_gb"`
+	PlanRemainingGB  float64  `json:"plan_remaining_gb"`  // quota left, excluding top-up packs
+	PackGB           float64  `json:"pack_gb"`            // GB bought as top-up packs this period
+	PackRemainingGB  float64  `json:"pack_remaining_gb"`  // GB left across those packs
+	PeriodStart      *string  `json:"period_start"`       // ISO 8601; nil on legacy accounts
+	PeriodEnd        *string  `json:"period_end"`         // ISO 8601; nil on legacy accounts
 	PaygBalanceCents int      `json:"payg_balance_cents"`
 	PaygRateUSDPerGB float64  `json:"payg_rate_usd_per_gb"`
 	// Month-to-date account usage (matches GET /v1/stats/overview).

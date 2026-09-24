@@ -20,7 +20,7 @@ const job = await client.downloads.create({
   url: "https://www.youtube.com/watch?v=...",
   format: "1080p",                       // 144p..2160p | mp3
   trim: { start: 120, end: 420 },        // optional clip window
-  // destination: { type: "r2", id: "..." },   // optional direct-to-bucket
+  // destination: { id: "conn_9f1c2a34" },  // optional direct-to-bucket (see below)
 });
 
 // L2: wait for the terminal state (polls with backoff)
@@ -63,6 +63,40 @@ export async function POST(request: Request) {
   }
   return Response.json({ ok: true });
 }
+```
+
+## Storage destinations
+
+By default the platform keeps the finished file and returns a presigned `download_url`
+(valid 7 days). Pass `destination` to have it written straight into your own bucket
+instead — the job then reports `storage_key` as `user://<bucket>/<key>` and
+`download_url` is null. Billing is identical either way, and failed or cancelled jobs are
+never charged.
+
+```ts
+// A saved connection. Connect the bucket once (Dashboard → Storage, or POST /v1/storage)
+// and reuse the id: the provider, bucket and credentials all come from the connection,
+// so you never have to know — or repeat — the provider.
+await client.downloads.create({
+  url, format: "1080p",
+  destination: { id: "conn_9f1c2a34" },
+});
+
+// Inline credentials. These are stored as a connection for your account and reused by
+// later jobs. `type` is required in this form — the SavedDestination vs InlineDestination
+// union enforces it, because without a concrete provider the server falls back to "url"
+// and would ignore the bucket.
+await client.downloads.create({
+  url, format: "1080p",
+  destination: {
+    type: "s3",                 // s3 | r2 | gcs | s3_compatible
+    bucket: "my-bucket",
+    region: "us-east-1",
+    access_key_id: "...",
+    secret_access_key: "...",
+    path: "videos/",            // optional; key prefix of the new connection (default youtube/{video_id}/)
+  },
+});
 ```
 
 ## Configuration

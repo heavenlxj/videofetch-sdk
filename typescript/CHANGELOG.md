@@ -3,6 +3,41 @@
 All notable changes to `@videofetch/sdk` are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] — 2026-09-24
+
+### Added
+
+- **`Usage` gained the account-level fields the API already returns:** `plan_remaining_gb`
+  (subscription allowance left, excluding top-up packs), `pack_gb` / `pack_remaining_gb` (the
+  packs bought for the current period) and `period_start` / `period_end`. With `remaining_gb`
+  they say exactly where the remaining allowance comes from.
+
+### Fixed
+
+- **`DestinationSpec` no longer requires `type` for a saved connection.** It is now a union of
+  `PlatformDestination` (`{ type: "url" }`), `SavedDestination` (`{ id: string }`) and
+  `InlineDestination` (inline credentials). `{ id: "conn_..." }` used to fail to compile with
+  `TS2741: Property 'type' is missing in type '{ id: string; }'`, even though the API has always
+  accepted it — the provider lives on the connection, so repeating it was never meaningful.
+  `{ type, id }` still compiles and `type` is ignored when `id` is present.
+- The union makes the inline form **stricter**: `type`, `bucket`, `access_key_id` and
+  `secret_access_key` are required there, and `type: "url"` is excluded from that member, so you
+  cannot accidentally omit a concrete provider and have the request silently fall back to
+  platform delivery while your bucket is ignored.
+
+### Changed
+
+- `Usage.key_id` is `string | null`. API-key authenticated calls always carry a value; the field
+  is `null` only when the account-level figures came from a dashboard session. Code that treated
+  it as a plain `string` needs a null check.
+- `DestinationSpec` is a type alias (a union) rather than an interface. Assigning an object
+  literal keeps working; an `interface X extends DestinationSpec` would not.
+
+### Docs
+
+- New "Storage destinations" section in the README, and `path` is documented as a property of
+  the connection created from inline credentials (it is ignored when `id` is given).
+
 ## [0.3.0] — 2026-09-22
 
 ### Added

@@ -193,8 +193,13 @@ class Usage:
     quota is account-level and shared by every key). `key_used_bytes`/`key_used_gb`
     are this key's own accumulated usage, for per-key attribution.
     `account_used_*_month` mirror the account-level current-month figures.
+
+    `quota_gb`/`remaining_gb` are the subscription quota; `plan_remaining_gb` excludes
+    top-up packs, `pack_gb`/`pack_remaining_gb` cover the packs bought for this period.
+    `key_id` is `None` when the figures were produced from a dashboard session rather
+    than an API key.
     """
-    key_id: str = ""
+    key_id: Optional[str] = None
     plan: str = "free"
     quota_gb: Optional[float] = None
     used_bytes: int = 0
@@ -202,6 +207,11 @@ class Usage:
     key_used_bytes: int = 0
     key_used_gb: float = 0.0
     remaining_gb: Optional[float] = None
+    plan_remaining_gb: float = 0.0
+    pack_gb: float = 0.0
+    pack_remaining_gb: float = 0.0
+    period_start: Optional[str] = None
+    period_end: Optional[str] = None
     payg_balance_cents: int = 0
     payg_rate_usd_per_gb: float = 0.5
     account_used_bytes_month: int = 0
@@ -216,13 +226,19 @@ class Usage:
     @classmethod
     def from_dict(cls, d: dict) -> "Usage":
         return cls(
-            key_id=str(d.get("key_id", "")), plan=d.get("plan", "free"),
+            # 注意: key 存在但值为 null 时不能走 str() —— str(None) 会变成字符串 "None"
+            key_id=d.get("key_id") or None, plan=d.get("plan", "free"),
             quota_gb=_as_float(d.get("quota_gb")),
             used_bytes=int(d.get("used_bytes") or 0),
             used_gb=float(d.get("used_gb") or 0.0),
             key_used_bytes=int(d.get("key_used_bytes") or 0),
             key_used_gb=float(d.get("key_used_gb") or 0.0),
             remaining_gb=_as_float(d.get("remaining_gb")),
+            plan_remaining_gb=float(d.get("plan_remaining_gb") or 0.0),
+            pack_gb=float(d.get("pack_gb") or 0.0),
+            pack_remaining_gb=float(d.get("pack_remaining_gb") or 0.0),
+            period_start=d.get("period_start") or None,
+            period_end=d.get("period_end") or None,
             payg_balance_cents=int(d.get("payg_balance_cents") or 0),
             payg_rate_usd_per_gb=float(d.get("payg_rate_usd_per_gb") or 0.0),
             account_used_bytes_month=int(d.get("account_used_bytes_month") or 0),

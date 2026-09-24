@@ -145,3 +145,63 @@ func TestUsageKeyUsedFields(t *testing.T) {
 		t.Fatalf("key-level usage = %d bytes / %v GB", u.KeyUsedBytes, u.KeyUsedGB)
 	}
 }
+
+// The account-level fields added in v0.4.0: the plan/pack split and the billing period.
+// key_id is null for dashboard-session responses — Go leaves a string field untouched on
+// JSON null, so this also pins that it does not error out.
+func TestUsageGetPackSplitAndPeriod(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, 200, map[string]any{
+			"key_id": nil, "plan": "pro", "quota_gb": 100.0, "used_bytes": 0, "used_gb": 0.0,
+			"remaining_gb": 60.5, "plan_remaining_gb": 50.5, "pack_gb": 10.0,
+			"pack_remaining_gb": 10.0, "period_start": "2026-09-01T00:00:00Z",
+			"period_end": "2026-10-01T00:00:00Z", "payg_balance_cents": 0,
+			"payg_rate_usd_per_gb": 0.5, "account_used_bytes_month": 0,
+			"account_used_gb_month": 0.0, "used_pct": 39.5, "month": "2026-09",
+			"active_jobs": 0, "concurrency_limit": 20,
+			"alert_level": "ok", "alert_message": "",
+		})
+	}))
+	defer srv.Close()
+
+	u, err := testClient(t, srv).Usage.Get(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u.KeyID != "" {
+		t.Fatalf("key_id = %q, want the empty string for a null key_id", u.KeyID)
+	}
+	if u.PlanRemainingGB != 50.5 || u.PackGB != 10.0 || u.PackRemainingGB != 10.0 {
+		t.Fatalf("pack split = (%v, %v, %v), want (50.5, 10, 10)",
+			u.PlanRemainingGB, u.PackGB, u.PackRemainingGB)
+	}
+	if u.PlanRemainingGB+u.PackRemainingGB != *u.RemainingGB {
+		t.Fatalf("plan+pack should add up to remaining: %v + %v != %v",
+			u.PlanRemainingGB, u.PackRemainingGB, *u.RemainingGB)
+	}
+	if u.PeriodStart == nil || *u.PeriodStart != "2026-09-01T00:00:00Z" {
+		t.Fatalf("period_start = %v", u.PeriodStart)
+	}
+	if u.PeriodEnd == nil || *u.PeriodEnd != "2026-10-01T00:00:00Z" {
+		t.Fatalf("period_end = %v", u.PeriodEnd)
+	}
+}
+
+// Absent period fields must stay nil rather than failing the decode (legacy accounts).
+func TestUsageGetLegacyAccountWithoutPeriod(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, 200, map[string]any{"plan": "free", "quota_gb": 1.0, "used_bytes": 0})
+	}))
+	defer srv.Close()
+
+	u, err := testClient(t, srv).Usage.Get(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u.PeriodStart != nil || u.PeriodEnd != nil {
+		t.Fatalf("period should be nil, got %v / %v", u.PeriodStart, u.PeriodEnd)
+	}
+	if u.PlanRemainingGB != 0 || u.PackGB != 0 || u.PackRemainingGB != 0 {
+		t.Fatalf("pack fields should default to zero: %+v", u)
+	}
+}

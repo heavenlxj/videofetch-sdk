@@ -69,22 +69,44 @@ export interface DownloadCreateParams {
   format?: DownloadFormat;
   /** optional clip window in seconds */
   trim?: TrimSpec;
-  /** saved connection: {type, id} or inline {type, bucket, access_key_id, ...} */
+  /** where the finished file should land — see {@link DestinationSpec}. Omit to let the
+   *  platform keep the file and return a presigned `download_url`. */
   destination?: DestinationSpec;
   /** receive download.* events for this job */
   webhook_url?: string;
 }
 
-export interface DestinationSpec {
-  type: DestinationType;
-  id?: string;
-  bucket?: string;
+/** Platform-hosted delivery: the platform keeps the file and returns a presigned
+ *  `download_url`. Equivalent to omitting `destination` entirely. */
+export interface PlatformDestination {
+  type: "url";
+}
+
+/** A saved storage connection. Only `id` is required — the server reads the provider,
+ *  bucket and credentials from the connection itself, so you do not need to know (or
+ *  repeat) the provider here. Every other field is ignored. */
+export interface SavedDestination {
+  /** connection id, from `POST /v1/storage` or the Dashboard → Storage page */
+  id: string;
+  /** optional, and ignored when `id` is given; kept for backwards compatibility */
+  type?: DestinationType;
+}
+
+/** Inline credentials. `type` is required here: without a concrete provider the server
+ *  would fall back to `"url"` and silently ignore the bucket. */
+export interface InlineDestination {
+  type: Exclude<DestinationType, "url">;
+  bucket: string;
+  access_key_id: string;
+  secret_access_key: string;
   endpoint?: string;
   region?: string;
+  /** object key prefix for the connection created from these credentials;
+   *  defaults to `youtube/{video_id}/` */
   path?: string;
-  access_key_id?: string;
-  secret_access_key?: string;
 }
+
+export type DestinationSpec = PlatformDestination | SavedDestination | InlineDestination;
 
 export interface DownloadList {
   items: Download[];
@@ -235,7 +257,8 @@ export type AlertLevel = "ok" | "warning" | "critical" | "exceeded";
 
 /** GET /v1/usage — account-level quota snapshot + concurrency + alert level. */
 export interface Usage {
-  key_id: string;
+  /** null when the account-level figures came from a dashboard session rather than an API key */
+  key_id: string | null;
   plan: string;
   quota_gb: number | null;
   /** account-level usage for the current month */
@@ -246,6 +269,16 @@ export interface Usage {
   key_used_bytes?: number;
   key_used_gb?: number;
   remaining_gb: number | null;
+  /** quota left on the subscription itself, excluding any top-up packs */
+  plan_remaining_gb: number;
+  /** total GB bought as top-up packs for the current period */
+  pack_gb: number;
+  /** GB left across all top-up packs for the current period */
+  pack_remaining_gb: number;
+  /** start of the current billing period (ISO 8601); null on legacy accounts */
+  period_start: string | null;
+  /** end of the current billing period (ISO 8601); null on legacy accounts */
+  period_end: string | null;
   payg_balance_cents: number;
   payg_rate_usd_per_gb: number;
   /** month-to-date bytes for the whole account (matches /v1/stats/overview) */

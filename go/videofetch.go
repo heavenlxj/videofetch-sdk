@@ -203,7 +203,7 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 		}
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "videofetch-go/0.3.0")
+		req.Header.Set("User-Agent", "videofetch-go/0.4.0")
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {

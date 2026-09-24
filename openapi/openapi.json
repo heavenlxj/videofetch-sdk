@@ -1204,7 +1204,7 @@
         },
         "type": "object",
         "title": "DestinationSpec",
-        "description": "Delivery target: {type: url} → platform delivery link; {type: s3|r2|gcs|s3_compatible, id} → saved connection;\n{type: s3|..., bucket/access_key_id/...} →   ( )"
+        "description": "Delivery target for the finished file.\n\n- `{\"id\": \"<connection-id>\"}` — a saved storage connection (Dashboard → Storage, or\n  `POST /v1/storage`). The provider is read from the connection, so `type` is optional\n  here and is ignored when the id is given.\n- `{\"type\": \"s3\"|\"r2\"|\"gcs\"|\"s3_compatible\", \"bucket\": \"...\", \"access_key_id\": \"...\",\n  \"secret_access_key\": \"...\"}` — inline credentials; stored as a connection for the\n  caller's account and reused by later jobs.\n- omitted, or `{\"type\": \"url\"}` — the platform keeps the file and returns a presigned\n  `download_url`.\n\n`bucket`, `endpoint`, `region`, `access_key_id`, `secret_access_key` and `path` are only\nread in the inline-credentials form: they describe the connection being created. `path`\nis that connection's object key prefix (default `youtube/{video_id}/`). All of them are\nignored when `id` is given — the saved connection already carries them."
       },
       "DestinationTest": {
         "properties": {
@@ -1937,7 +1937,14 @@
       "UsageOut": {
         "properties": {
           "key_id": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Key Id"
           },
           "plan": {
@@ -2033,11 +2040,47 @@
             "type": "string",
             "title": "Alert Message",
             "default": ""
+          },
+          "plan_remaining_gb": {
+            "type": "number",
+            "title": "Plan Remaining Gb",
+            "default": 0.0
+          },
+          "pack_gb": {
+            "type": "number",
+            "title": "Pack Gb",
+            "default": 0.0
+          },
+          "pack_remaining_gb": {
+            "type": "number",
+            "title": "Pack Remaining Gb",
+            "default": 0.0
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
           }
         },
         "type": "object",
         "required": [
-          "key_id",
           "plan",
           "quota_gb",
           "used_bytes",

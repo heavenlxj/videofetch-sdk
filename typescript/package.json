@@ -1,6 +1,6 @@
 {
   "name": "@videofetch/sdk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Official VideoFetch SDK for TypeScript/JavaScript — video ingestion API (YouTube URL → MP4/MP3 to your storage)",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -26,7 +26,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "node tests/integration.live.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "typecheck:contract": "tsc -p tsconfig.contract.json"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
