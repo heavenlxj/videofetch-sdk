@@ -15,6 +15,13 @@ Webhook endpoints (v0.2.0):
     ep = client.webhooks.create("https://acme.dev/hooks/vf")   # ep.secret shown once
     client.webhooks.list(); client.webhooks.test(ep.id); client.webhooks.delete(ep.id)
 
+Storage (v0.5.0):
+    conn = client.storage.create(provider="s3", bucket="my-bucket", region="us-east-1",
+                                 access_key_id="AKIA...", secret_access_key="...")
+    job = client.downloads.create(url=..., destination=conn.id)   # "st_…"
+    print(job.wait().delivery.uri)          # s3://my-bucket/youtube/<id>/…
+    # failed upload → DeliveryFailedError; fix the bucket, then client.downloads.redeliver(job.id)
+
 Async:
     from videofetch.asyncio import AsyncVideoFetch
     async with AsyncVideoFetch(api_key="...") as client:
@@ -30,6 +37,8 @@ from .client import AsyncVideoFetch, VideoFetch  # noqa: F401
 from .errors import (  # noqa: F401
     ApiError,
     AuthenticationError,
+    ConflictError,
+    DeliveryFailedError,
     DownloadNotCompletedError,
     DownloadURLUnavailableError,
     JobFailedError,
@@ -37,17 +46,23 @@ from .errors import (  # noqa: F401
     PermissionDeniedError,
     QuotaExceededError,
     RateLimitError,
+    StorageError,
     ValidationError,
     VideoFetchError,
 )
 from .models import (  # noqa: F401
     AlertEvent,
     AlertState,
+    Delivery,
     Download,
     DownloadAttempt,
+    DownloadError,
     DownloadList,
     FormatInfo,
     ReplayResult,
+    StorageConnection,
+    StorageTestResult,
+    StorageTestStep,
     TrimSpec,
     Usage,
     UsageAlerts,
@@ -73,7 +88,7 @@ from .webhooks import (  # noqa: F401
     verify_webhook_signature,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 __all__ = [
     "VideoFetch", "AsyncVideoFetch", "DownloadJob",
     "VideoFetchError", "AuthenticationError", "PermissionDeniedError", "QuotaExceededError",
@@ -89,5 +104,8 @@ __all__ = [
     "WebhookDelivery", "WebhookDeliveriesResult", "WebhookDeliveryHealth", "ReplayResult",
     "delivery_id", "attempt_number",
     "DELIVERY_HEADER", "ATTEMPT_HEADER", "TIMESTAMP_HEADER",
+    # v0.5.0
+    "StorageError", "ConflictError", "DeliveryFailedError",
+    "Delivery", "DownloadError", "StorageConnection", "StorageTestResult", "StorageTestStep",
     "__version__",
 ]

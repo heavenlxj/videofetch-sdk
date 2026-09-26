@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.0 — 2026-09-26
+
+Added
+- **`client.storage`** — `list()`, `retrieve(id)`, `create(...)`, `update(id, ...)`,
+  `delete(id, force=False)` and `test(id)` / `test(provider=..., ...)`. Connections have a
+  public `st_…` id plus health fields (`status`, `last_error_*`, `last_used_at`,
+  `deliveries_count`). Available with an API key.
+- **`destination` shorthands:** `"st_…"` (saved connection), `"url"` (force platform),
+  `{"id", "path"|"key"}` (per-job key override), and inline credentials with
+  `"save": True` / `"name"`. Omitting `destination` now uses the account's default connection.
+- **`Download.delivery`** (`Delivery`: `type`, `status`, `uri`, `bucket`, `key`, `etag`,
+  `attempts`, `redeliverable`, `hold_expires_at`, …), **`Download.error`** (`DownloadError`:
+  `code`, `stage`, `retryable`, `provider_code`, `hint`) and `Download.destination_id`.
+- **`client.downloads.redeliver(id, destination=None)`** — retry the upload from the held
+  copy without re-downloading or re-charging.
+- Errors: `StorageError` (422 `storage_*`, carries `hint`), `ConflictError` (409),
+  `DeliveryFailedError` (`JobFailedError` subclass for delivery-stage failures).
+  `JobFailedError` gained `stage`, `retryable`, `hint`, `provider_code`, `download`.
+- `WEBHOOK_EVENTS` includes `storage.connection_failed`.
+
+Changed
+- Inline credentials are used for that job only unless `"save": True` is passed (they used to
+  be stored as a connection automatically).
+
 ## 0.4.0 — 2026-09-24
 
 Added

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.0 — 2026-09-26
+
+Added
+- `list_storage` (read-only): connected buckets with their `st_…` ids, which one is the default,
+  and health (`status`, last error). Credentials are never returned.
+- `redeliver_download(job_id, destination_id=None, wait_seconds=60)`: after a delivery failure,
+  upload the held copy again (or to another destination / `"url"`) — no re-download, no extra
+  charge. Bounded wait like `download_media`.
+- Delivery failures are returned, not raised: the result carries `error.stage="delivery"`,
+  `provider_code`, `hint`, `redeliverable` and `hold_expires_at`, and `next_step` tells the model to
+  relay the fix and call `redeliver_download`.
+- Completed storage jobs report `destination_id` and `storage_uri` (`s3://…`, `r2://…`, `gs://…`).
+- 422 `storage_*` and 409 `not_redeliverable` are translated into actionable messages.
+
+Changed
+- `download_media(destination_id=...)` sends the id as the `destination` string shorthand and
+  accepts `"url"` to force a platform link. Omitting it now uses the account's default storage.
+- Requires `videofetch-sdk>=0.5.0`.
+
 ## 0.1.0 — 2026-09-24
 
 First release.

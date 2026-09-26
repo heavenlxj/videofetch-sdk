@@ -50,29 +50,73 @@ type TrimSpec struct {
 	End   *float64 `json:"end,omitempty"`
 }
 
-// DestinationSpec references a saved storage connection or carries inline credentials.
+// DestinationSpec says where the finished file goes. A nil Destination uses the account's
+// default storage connection, or the platform (presigned DownloadURL) when none is set.
 //
-// Saved connection — set ID only. The server reads the provider, bucket and credentials
-// from the connection, so Type is ignored whenever ID is set and should be left empty
-// (an empty Type would otherwise be sent and rejected as an invalid enum value).
+// Saved connection — set ID ("st_…", see StorageID) only. The server reads the provider,
+// bucket and credentials from the connection, so Type is ignored whenever ID is set and
+// should be left empty. Path or Key override the object key for this job only.
+//
+// Platform — Type "url" (see PlatformURL) forces platform delivery even when a default
+// connection is set.
 //
 // Inline credentials — set Type ("s3"|"r2"|"gcs"|"s3_compatible") along with Bucket,
-// AccessKeyID and SecretAccessKey; Type is required in this form, because without a
-// concrete provider the server falls back to "url" and ignores the bucket.
+// AccessKeyID and SecretAccessKey. They are used for this job only unless Save is true,
+// which keeps them as a connection named Name (an identical existing one is reused).
 //
-// Bucket, Endpoint, Region, AccessKeyID, SecretAccessKey and Path are only read in the
-// inline form — they describe the connection being created. Path is that connection's
-// object key prefix and defaults to "youtube/{video_id}/". All of them are ignored when
-// ID is set, since the saved connection already carries them.
+// Path is an object key prefix (default "youtube/{video_id}/"); Key is a full key template
+// that takes precedence and also accepts {ext}. Variables: {video_id} {job_id} {format} {date}.
 type DestinationSpec struct {
 	Type            string `json:"type,omitempty"` // omit for a saved ID; required for inline credentials
 	ID              string `json:"id,omitempty"`
 	Bucket          string `json:"bucket,omitempty"`
-	Endpoint        string `json:"endpoint,omitempty"`
+	Endpoint        string `json:"endpoint,omitempty"` // required for r2 and s3_compatible
 	Region          string `json:"region,omitempty"`
-	Path            string `json:"path,omitempty"` // inline only: key prefix of the new connection
+	Path            string `json:"path,omitempty"`
+	Key             string `json:"key,omitempty"`
 	AccessKeyID     string `json:"access_key_id,omitempty"`
 	SecretAccessKey string `json:"secret_access_key,omitempty"`
+	Save            bool   `json:"save,omitempty"` // inline only: keep as a saved connection
+	Name            string `json:"name,omitempty"` // inline only: name of the saved connection
+}
+
+// StorageID targets a saved storage connection by its "st_…" id.
+func StorageID(id string) *DestinationSpec { return &DestinationSpec{ID: id} }
+
+// PlatformURL forces platform delivery (presigned DownloadURL) even when a default
+// storage connection is configured.
+func PlatformURL() *DestinationSpec { return &DestinationSpec{Type: "url"} }
+
+// Delivery says where the finished file went (Download.Delivery).
+//
+// Type "url": the platform keeps it and DownloadURL is set. Type "storage": it was written
+// to your bucket (URI/Bucket/Key). Status "failed" with Redeliverable true means the file is
+// held until HoldExpiresAt and Downloads.Redeliver can retry without re-downloading.
+type Delivery struct {
+	Type          string  `json:"type"`   // url | storage
+	Status        string  `json:"status"` // pending | delivered | failed
+	DestinationID *string `json:"destination_id"`
+	Ephemeral     bool    `json:"ephemeral"`
+	Provider      *string `json:"provider"`
+	Bucket        *string `json:"bucket"`
+	Key           *string `json:"key"`
+	URI           *string `json:"uri"` // s3:// · gs:// · r2://
+	ETag          *string `json:"etag"`
+	SizeBytes     *int64  `json:"size_bytes"`
+	Attempts      *int    `json:"attempts"`
+	DeliveredAt   *string `json:"delivered_at"`
+	Redeliverable bool    `json:"redeliverable"`
+	HoldExpiresAt *string `json:"hold_expires_at"`
+}
+
+// DownloadError is the structured failure reason (Download.Error).
+type DownloadError struct {
+	Code         string  `json:"code"`
+	Message      *string `json:"message"`
+	Stage        *string `json:"stage"` // fetch | process | billing | delivery
+	Retryable    *bool   `json:"retryable"`
+	ProviderCode *string `json:"provider_code"` // raw storage error, e.g. AccessDenied
+	Hint         *string `json:"hint"`
 }
 
 // DownloadAttempt is one recorded download attempt (fail-not-charged evidence).
@@ -106,6 +150,9 @@ type Download struct {
 	SizeBytes            *int64            `json:"size_bytes"`
 	Trim                 *TrimSpec         `json:"trim"`
 	DestinationType      *string           `json:"destination_type"`
+	DestinationID        *string           `json:"destination_id"`
+	Delivery             *Delivery         `json:"delivery"`
+	Error                *DownloadError    `json:"error"`
 	DownloadURL          *string           `json:"download_url"`
 	DownloadURLExpiresAt *string           `json:"download_url_expires_at"`
 	StorageKey           *string           `json:"storage_key"`
@@ -181,17 +228,21 @@ const (
 
 // WebhookPayload is a delivered download.* event.
 type WebhookPayload struct {
-	Event       string         `json:"event"`
-	ID          string         `json:"id"`
-	Status      DownloadStatus `json:"status"`
-	Format      DownloadFormat `json:"format"`
-	FileSize    *int64         `json:"file_size"`
-	Duration    *float64       `json:"duration"`
-	DownloadURL *string        `json:"download_url"`
-	Destination string         `json:"destination"`
-	CostUSD     float64        `json:"cost_usd"`
-	CreatedAt   *string        `json:"created_at"`
-	CompletedAt *string        `json:"completed_at"`
+	Event         string         `json:"event"`
+	ID            string         `json:"id"`
+	Status        DownloadStatus `json:"status"`
+	Format        DownloadFormat `json:"format"`
+	FileSize      *int64         `json:"file_size"`
+	Duration      *float64       `json:"duration"`
+	DownloadURL   *string        `json:"download_url"`
+	Destination   string         `json:"destination"`
+	DestinationID *string        `json:"destination_id"`
+	StorageKey    *string        `json:"storage_key"`
+	Delivery      *Delivery      `json:"delivery"`
+	Error         *DownloadError `json:"error"`
+	CostUSD       float64        `json:"cost_usd"`
+	CreatedAt     *string        `json:"created_at"`
+	CompletedAt   *string        `json:"completed_at"`
 }
 
 // ────────────────────────── Service ──────────────────────────
@@ -245,6 +296,21 @@ func (s *DownloadsService) List(ctx context.Context, p DownloadListParams) (*Dow
 // Cancel deletes/cancels a job (queued/processing). Safe on any state.
 func (s *DownloadsService) Cancel(ctx context.Context, id string) error {
 	return s.client.request(ctx, "DELETE", "/v1/downloads/"+url.PathEscape(id), nil, nil)
+}
+
+// Redeliver retries the upload of a job that failed at delivery, from the held copy.
+// Pass nil to reuse the job's original destination. Nothing is downloaded or charged
+// again. Returns *ConflictError (code "not_redeliverable") when the job did not fail at
+// delivery or the hold (Delivery.HoldExpiresAt) has expired.
+func (s *DownloadsService) Redeliver(ctx context.Context, id string, dest *DestinationSpec) (*Job, error) {
+	body := struct {
+		Destination *DestinationSpec `json:"destination,omitempty"`
+	}{dest}
+	var dl Download
+	if err := s.client.request(ctx, "POST", "/v1/downloads/"+url.PathEscape(id)+"/redeliver", body, &dl); err != nil {
+		return nil, err
+	}
+	return &Job{client: s.client, current: &dl}, nil
 }
 
 // CreateAndWait is the L3 one-shot: create + poll until terminal.
@@ -323,7 +389,7 @@ func (c *Client) fetchToFile(ctx context.Context, link, target string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "videofetch-go/0.4.0")
+	req.Header.Set("User-Agent", "videofetch-go/0.5.0")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -436,7 +502,8 @@ func (j *Job) Refresh(ctx context.Context) (*Download, error) {
 // Wait polls until the job reaches a terminal state.
 //
 //   - Network errors never abort; polling continues until ctx is cancelled.
-//   - A failed job returns *JobFailedError (failed downloads are never charged).
+//   - A failed job returns *JobFailedError (failed downloads are never charged);
+//     errors.Is(err, ErrDeliveryFailed) matches a failed upload to your storage.
 //   - timeout <= 0 waits forever (until ctx cancellation).
 //   - Cancelling ctx only stops local waiting — the server-side job keeps
 //     running unless you call Cancel.
@@ -492,7 +559,20 @@ func raiseIfFailed(dl *Download) error {
 		if dl.ErrorMessage != nil {
 			msg = *dl.ErrorMessage
 		}
-		return &JobFailedError{JobID: dl.ID, ErrorCode: code, ErrorMessage: msg}
+		e := &JobFailedError{JobID: dl.ID, ErrorCode: code, ErrorMessage: msg, Download: dl}
+		if d := dl.Error; d != nil {
+			e.Retryable = d.Retryable
+			if d.Stage != nil {
+				e.Stage = *d.Stage
+			}
+			if d.Hint != nil {
+				e.Hint = *d.Hint
+			}
+			if d.ProviderCode != nil {
+				e.ProviderCode = *d.ProviderCode
+			}
+		}
+		return e
 	}
 	return nil
 }

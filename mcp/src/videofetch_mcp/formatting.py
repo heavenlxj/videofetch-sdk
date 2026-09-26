@@ -68,6 +68,10 @@ def next_step_for(job: Any, cfg: Any, saved_path: Optional[str] = None) -> str:
     if st == "completed":
         if saved_path:
             return f"Artifact saved to {saved_path}. Nothing else to do."
+        dv = getattr(job, "delivery", None)
+        if dv is not None and dv.type == "storage" and dv.uri:
+            return (f"Artifact delivered to your own storage ({dv.provider or job.destination_type}) at "
+                    f"{dv.uri}. Nothing else to do.")
         if job.storage_key:
             return (f"Artifact delivered to your own storage ({job.destination_type}) at "
                     f"{job.storage_key}. Nothing else to do.")
@@ -77,6 +81,18 @@ def next_step_for(job: Any, cfg: Any, saved_path: Optional[str] = None) -> str:
                     "save_to=\"<file path>\" to have this server store it for you.")
         return "Artifact is ready but no download_url was issued — retrieve the job again."
     if st == "failed":
+        err, dv = getattr(job, "error", None), getattr(job, "delivery", None)
+        if err is not None and err.stage == "delivery":
+            fix = f" Fix: {err.hint}" if err.hint else ""
+            if dv is not None and dv.redeliverable:
+                until = f" before {dv.hold_expires_at} (UTC)" if dv.hold_expires_at else ""
+                return (f"The video downloaded fine but could not be written to the user's storage "
+                        f"({err.code}: {err.message or job.error_message}). Nothing was charged.{fix} "
+                        f"Once the user has fixed it, call redeliver_download('{job.id}'){until} — "
+                        "no re-download, no extra charge. Or pass destination_id=\"url\" to get a "
+                        "platform link instead.")
+            return (f"Delivery to the user's storage failed ({err.code}) and the held copy has expired. "
+                    f"Nothing was charged.{fix} Fix the bucket, then run download_media again.")
         reason = job.error_message or job.error_code or "unknown"
         return (f"Job failed and was NOT charged. Reason: {reason} "
                 "(the attempt log is in the error detail). Retrying the same URL as-is is "
@@ -122,8 +138,14 @@ def shape_download(job: Any, *, cfg: Any, saved_path: Optional[str] = None,
         "created_at": job.created_at,
         "completed_at": job.completed_at,
     }
+    dv = getattr(job, "delivery", None)
     if job.status == "completed":
-        if job.storage_key:
+        if dv is not None and dv.type == "storage":
+            d["destination_type"] = dv.provider or job.destination_type
+            d["destination_id"] = dv.destination_id
+            d["storage_uri"] = dv.uri
+            d["storage_key"] = job.storage_key
+        elif job.storage_key:
             d["destination_type"] = job.destination_type
             d["storage_key"] = job.storage_key
         elif job.download_url:
@@ -135,6 +157,13 @@ def shape_download(job: Any, *, cfg: Any, saved_path: Optional[str] = None,
     if job.status == "failed":
         d["error_code"] = job.error_code
         d["error_message"] = job.error_message
+        err = getattr(job, "error", None)
+        if err is not None:
+            d["error"] = _drop_empty({"stage": err.stage, "retryable": err.retryable,
+                                      "provider_code": err.provider_code, "hint": err.hint})
+        if dv is not None and dv.status == "failed":
+            d["redeliverable"] = dv.redeliverable
+            d["hold_expires_at"] = dv.hold_expires_at if dv.redeliverable else None
     if getattr(job, "queue_position", None) is not None:
         d["queue"] = _drop_empty({
             "position": job.queue_position, "ahead_of_you": job.ahead_of_you,
@@ -220,3 +249,27 @@ def shape_list(res: Any, *, cfg: Any, limit: int = 20) -> dict:
         "next_step": ("Pass offset to page further" if getattr(res, "has_more", False)
                       else "That is the whole list for this filter."),
     })
+
+
+def shape_storage_list(items: Any) -> dict:
+    conns = []
+    for c in items or []:
+        conns.append(_drop_empty({
+            "destination_id": c.id, "name": c.name, "provider": c.provider, "bucket": c.bucket,
+            "path_prefix": c.path_prefix, "is_default": c.is_default or None, "status": c.status,
+            "last_error": (f"{c.last_error_code}: {c.last_error_message or ''}".strip(": ")
+                           if c.last_error_code else None),
+            "deliveries": c.deliveries_count or None,
+        }))
+    default = next((c["destination_id"] for c in conns if c.get("is_default")), None)
+    failing = [c["destination_id"] for c in conns if c.get("status") == "failing"]
+    if not conns:
+        nxt = ("No storage connected. download_media will return a platform link; to deliver into a "
+               "bucket the user connects one in the VideoFetch dashboard (Storage).")
+    else:
+        nxt = (f"Pass destination_id to download_media. "
+               + (f"Omitting it uses the default {default}. " if default else
+                  "No default is set, so omitting it returns a platform link. ")
+               + (f"Failing: {', '.join(failing)} — uploads there will fail until the user fixes it."
+                  if failing else ""))
+    return _drop_empty({"ok": True, "count": len(conns), "storage": conns, "next_step": nxt.strip()})

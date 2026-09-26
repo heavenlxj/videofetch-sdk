@@ -21,12 +21,15 @@ const (
 	EventQuotaWarning  = "quota.warning"
 	EventQuotaExceeded = "quota.exceeded"
 	EventBalanceLow    = "balance.low"
+	// EventStorageConnectionFailed fires once when a saved connection starts failing
+	// with a non-retryable error (auth, permission, missing bucket, …).
+	EventStorageConnectionFailed = "storage.connection_failed"
 )
 
 // WebhookEvents lists every event an account-level endpoint can subscribe to.
 var WebhookEvents = []string{
 	EventQueued, EventProcessing, EventCompleted, EventFailed,
-	EventQuotaWarning, EventQuotaExceeded, EventBalanceLow,
+	EventQuotaWarning, EventQuotaExceeded, EventBalanceLow, EventStorageConnectionFailed,
 }
 
 // WebhookEndpoint is a registered account-level webhook endpoint.

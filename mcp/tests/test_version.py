@@ -12,9 +12,9 @@ from videofetch_mcp.server import SERVER_NAME, SERVER_VERSION
 PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 
 
-def test_version_is_bumped_to_0_1_0():
-    assert videofetch_mcp.__version__ == "0.1.0"
-    assert SERVER_VERSION == "0.1.0"
+def test_version_is_bumped_to_0_2_0():
+    assert videofetch_mcp.__version__ == "0.2.0"
+    assert SERVER_VERSION == "0.2.0"
 
 
 def test_pyproject_version_matches_server_version():

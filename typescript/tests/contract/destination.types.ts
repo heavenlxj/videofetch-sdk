@@ -16,7 +16,7 @@
  * line, so the negative cases below are deliberately written on a single line with the
  * `@ts-expect-error` comment immediately above.
  */
-import type { DestinationSpec, DownloadCreateParams } from "../../src/types";
+import type { DestinationInput, DestinationSpec, DownloadCreateParams } from "../../src/types";
 
 // ── legal shapes ───────────────────────────────────────────────────────────────────────────
 const savedIdOnly: DestinationSpec = { id: "conn_9f1c2a34" };
@@ -29,6 +29,20 @@ const inline: DestinationSpec = {
   access_key_id: "AKIA...",
   secret_access_key: "...",
   path: "videos/",
+};
+
+// v0.5.0: shorthands, per-job key override, ephemeral inline credentials kept with `save`
+const shorthandId: DestinationInput = "st_9f1c2a34b5d6e7f8";
+const shorthandUrl: DestinationInput = "url";
+const savedWithKey: DestinationSpec = { id: "st_9f1c2a34b5d6e7f8", key: "clips/{video_id}.{ext}" };
+const inlineSaved: DestinationSpec = {
+  type: "r2",
+  bucket: "b",
+  endpoint: "https://acct.r2.cloudflarestorage.com",
+  access_key_id: "k",
+  secret_access_key: "s",
+  save: true,
+  name: "R2 archive",
 };
 
 // the same shape through the public create() parameter
@@ -49,7 +63,14 @@ const inlineClaimingUrl: DestinationSpec = { type: "url", bucket: "b", access_ke
 // @ts-expect-error a saved connection is identified by its id, not by its provider
 const savedWithoutId: DestinationSpec = { type: "s3" };
 
+// @ts-expect-error `save` only makes sense with inline credentials, which need a concrete provider
+const saveWithoutCreds: DestinationSpec = { type: "url", save: true };
+
+// @ts-expect-error a storage id is a string, not a number
+const numericShorthand: DestinationInput = 42;
+
 export const contract: DestinationSpec[] = [
   savedIdOnly, savedWithType, platform, inline, createParams.destination as DestinationSpec,
-  inlineWithoutType, inlineClaimingUrl, savedWithoutId,
+  inlineWithoutType, inlineClaimingUrl, savedWithoutId, savedWithKey, inlineSaved, saveWithoutCreds,
 ];
+export const shorthands: DestinationInput[] = [shorthandId, shorthandUrl, numericShorthand];

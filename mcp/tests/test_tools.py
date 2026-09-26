@@ -2,7 +2,8 @@
 
 断言的是**产品契约**, 不是实现细节。每一条都对应文档里对用户/Agent 的承诺:
   - 免费探测不消耗额度, 且给出可选格式与预估体积;
-  - 建单会带上 trim / destination (只带 id) / webhook;
+  - 建单会带上 trim / destination (只带 st_ id 字符串) / webhook;
+  - 投递失败不抛错: 返回 hint + redeliver_download 的下一步, 重投不重下;
   - 有界等待: 超时**不报错**, 返回 processing + job_id 让 Agent 去轮询;
   - 落盘只在白名单目录内, 写进去的字节与产物一致;
   - 失败不收费, 且错误信息里有"下一步该做什么";
@@ -50,15 +51,14 @@ def test_download_media_completes_and_reports_link(api):
 def test_download_media_sends_trim_and_destination_and_webhook(api):
     out = server.download_media(
         url="https://youtu.be/aqz-KE-bpKQ", format="mp3", start=10, end=40,
-        destination_id="11111111-2222-3333-4444-555555555555",
+        destination_id=" st_default0000001 ",
         webhook_url="https://acme.dev/hooks/vf", wait_seconds=0,
     )
     body = next(b for m, p, b in api.requests if m == "POST" and p == "/v1/downloads")
     assert body["trim"] == {"start": 10.0, "end": 40.0}
-    # ★ 只带 id (后端从库里取真实 provider)。这条断言守着 backend 的 destination 判据别被改回去。
-    assert body["destination"] == {"id": "11111111-2222-3333-4444-555555555555"}
+    # ★ 只带 st_ id 字符串 (后端从库里取 provider / 凭据), 模型永远碰不到凭据
+    assert body["destination"] == "st_default0000001"
     assert body["webhook_url"] == "https://acme.dev/hooks/vf"
-    assert "type" not in body["destination"]
     assert out["status"] in ("queued", "processing")
 
 
@@ -80,14 +80,80 @@ def test_timeout_is_not_an_error(make_api):
     assert "nothing has been charged yet" in out["next_step"].lower()
 
 
-def test_destination_job_reports_storage_key(make_api):
+def test_destination_omitted_is_not_sent(api):
+    server.download_media(url="https://youtu.be/x", format="720p", wait_seconds=0)
+    body = next(b for m, p, b in api.requests if m == "POST" and p == "/v1/downloads")
+    assert "destination" not in body      # 后端据此走账户默认存储
+
+
+def test_destination_job_reports_storage_uri(make_api):
     make_api(with_destination=True)
     out = server.download_media(url="https://youtu.be/x", format="720p",
-                                destination_id="11111111-2222-3333-4444-555555555555")
+                                destination_id="st_default0000001")
     assert out["destination_type"] == "r2"
+    assert out["destination_id"] == "st_default0000001"
+    assert out["storage_uri"] == "r2://my-bucket/youtube/aqz-KE-bpKQ/dl_test.mp3"
     assert out["storage_key"].startswith("user://my-bucket/")
     assert "download_url" not in out
-    assert "your own storage" in out["next_step"]
+    assert "your own storage" in out["next_step"] and "r2://my-bucket/" in out["next_step"]
+
+
+# ── 存储: 列表 / 投递失败 / 重投 ────────────────────────────────────────────
+def test_list_storage_shows_ids_default_and_failing(api):
+    out = server.list_storage()
+    assert out["count"] == 2
+    first, second = out["storage"]
+    assert first["destination_id"] == "st_default0000001" and first["is_default"] is True
+    assert second["status"] == "failing" and second["last_error"].startswith("storage_permission_denied")
+    assert "access_key" not in str(out) and "secret" not in str(out)
+    assert "default st_default0000001" in out["next_step"]
+    assert "st_failing0000002" in out["next_step"]
+
+
+def test_delivery_failure_is_returned_not_raised(make_api):
+    make_api(delivery_fails=True)
+    out = server.download_media(url="https://youtu.be/x", format="720p")
+    assert out["ok"] is False and out["status"] == "failed"
+    assert out["error_code"] == "storage_permission_denied"
+    assert out["error"]["stage"] == "delivery" and out["error"]["provider_code"] == "AccessDenied"
+    assert out["redeliverable"] is True and out["hold_expires_at"]
+    assert "redeliver_download" in out["next_step"] and "s3:PutObject" in out["next_step"]
+    assert "Nothing was charged" in out["next_step"]
+
+
+def test_redeliver_after_fix_delivers(make_api):
+    api = make_api(delivery_fails=True)
+    failed = server.download_media(url="https://youtu.be/x", format="720p")
+    out = server.redeliver_download(job_id=failed["job_id"])
+    assert out["status"] == "completed" and out["storage_uri"].startswith("r2://my-bucket/")
+    posts = [p for m, p, _ in api.requests if m == "POST"]
+    assert posts == ["/v1/downloads", f"/v1/downloads/{failed['job_id']}/redeliver"]   # 没有重新建单
+
+
+def test_redeliver_to_other_destination(make_api):
+    api = make_api(delivery_fails=True)
+    failed = server.download_media(url="https://youtu.be/x", format="720p")
+    server.redeliver_download(job_id=failed["job_id"], destination_id="url", wait_seconds=0)
+    body = next(b for m, p, b in api.requests if p.endswith("/redeliver"))
+    assert body == {"destination": "url"}
+
+
+def test_redeliver_not_redeliverable_is_actionable(api):
+    job = server.download_media(url="https://youtu.be/x", format="720p")
+    with pytest.raises(ToolError) as e:
+        server.redeliver_download(job_id=job["job_id"])
+    assert "not_redeliverable" in str(e.value) and "download_media" in str(e.value)
+
+
+def test_storage_error_points_at_list_storage(api):
+    api.force("POST", "/v1/downloads", 422, {"detail": {
+        "code": "storage_not_found", "message": "No storage connection st_nope",
+        "hint": "Use an id from GET /v1/storage", "param": "destination"}})
+    with pytest.raises(ToolError) as e:
+        server.download_media(url="https://youtu.be/x", format="720p", destination_id="st_nope")
+    msg = str(e.value)
+    assert msg.startswith("storage_not_found") and "list_storage" in msg
+    assert "Use an id from GET /v1/storage" in msg and "credentials" in msg
 
 
 # ── download_media: 落盘 ────────────────────────────────────────────────────

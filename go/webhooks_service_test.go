@@ -103,7 +103,7 @@ func TestWebhooksCRUDAndTest(t *testing.T) {
 func TestWebhookEventsCatalogue(t *testing.T) {
 	want := []string{
 		"download.queued", "download.processing", "download.completed", "download.failed",
-		"quota.warning", "quota.exceeded", "balance.low",
+		"quota.warning", "quota.exceeded", "balance.low", "storage.connection_failed",
 	}
 	if len(WebhookEvents) != len(want) {
 		t.Fatalf("WebhookEvents = %v", WebhookEvents)

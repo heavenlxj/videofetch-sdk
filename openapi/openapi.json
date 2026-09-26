@@ -212,6 +212,66 @@
         }
       }
     },
+    "/v1/downloads/{download_id}/redeliver": {
+      "post": {
+        "tags": [
+          "downloads"
+        ],
+        "summary": "Redeliver Download",
+        "description": "Retry delivery of a job that failed at the delivery stage. While the file is held (24h, see `delivery.hold_expires_at`) it is uploaded again without re-downloading the source and without charging again. Omit `destination` to retry the original target (e.g. after fixing permissions), or pass a new one — same forms as `POST /v1/downloads`. Returns 409 `not_redeliverable` when the job did not fail at delivery or the hold has expired.",
+        "operationId": "redeliver_download_v1_downloads__download_id__redeliver_post",
+        "parameters": [
+          {
+            "name": "download_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Download Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RedeliverRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/info": {
       "post": {
         "tags": [
@@ -559,7 +619,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DestinationList"
+                }
               }
             }
           }
@@ -586,7 +648,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DestinationOut"
+                }
               }
             }
           },
@@ -604,6 +668,46 @@
       }
     },
     "/v1/storage/{dest_id}": {
+      "get": {
+        "tags": [
+          "storage"
+        ],
+        "summary": "Get Storage",
+        "operationId": "get_storage_v1_storage__dest_id__get",
+        "parameters": [
+          {
+            "name": "dest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dest Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DestinationOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "put": {
         "tags": [
           "storage"
@@ -636,7 +740,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DestinationOut"
+                }
               }
             }
           },
@@ -667,6 +773,18 @@
               "type": "string",
               "title": "Dest Id"
             }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Delete even if jobs are still queued for it",
+              "default": false,
+              "title": "Force"
+            },
+            "description": "Delete even if jobs are still queued for it"
           }
         ],
         "responses": {
@@ -692,7 +810,7 @@
           "storage"
         ],
         "summary": "Test Storage",
-        "description": "Connection test: check list permission, write a small probe object, then delete it — write permission is verified, not assumed.",
+        "description": "Connection test: connect, write a small probe object, then delete it — write permission is verified, not assumed. A malformed config (bucket name, endpoint, region, blocked host) is rejected with 422; a problem found while talking to the bucket returns 200 with `ok: false`, a `storage_*` code, a hint and per-step results. Only PutObject is required; a failed cleanup is reported as a warning.",
         "operationId": "test_storage_v1_storage_test_post",
         "requestBody": {
           "content": {
@@ -709,7 +827,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DestinationTestOut"
+                }
               }
             }
           },
@@ -749,7 +869,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DestinationTestOut"
+                }
               }
             }
           },
@@ -1016,6 +1138,154 @@
         ],
         "title": "DayUsage"
       },
+      "DeliveryOut": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "url",
+              "storage"
+            ],
+            "title": "Type"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "delivered",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "destination_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Id"
+          },
+          "ephemeral": {
+            "type": "boolean",
+            "title": "Ephemeral",
+            "default": false
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "bucket": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uri"
+          },
+          "etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etag"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "attempts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempts"
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered At"
+          },
+          "redeliverable": {
+            "type": "boolean",
+            "title": "Redeliverable",
+            "default": false
+          },
+          "hold_expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hold Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "status"
+        ],
+        "title": "DeliveryOut",
+        "description": "Where the file went. `type=url`: platform bucket + `download_url`; `type=storage`: your bucket."
+      },
       "DemoRequest": {
         "properties": {
           "url": {
@@ -1110,6 +1380,155 @@
         ],
         "title": "DestinationCreate"
       },
+      "DestinationList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DestinationOut"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "DestinationList"
+      },
+      "DestinationOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "bucket": {
+            "type": "string",
+            "title": "Bucket"
+          },
+          "path_prefix": {
+            "type": "string",
+            "title": "Path Prefix"
+          },
+          "access_key_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Key Masked"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "active"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StorageErrorOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "deliveries_count": {
+            "type": "integer",
+            "title": "Deliveries Count",
+            "default": 0
+          },
+          "last_tested_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tested At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "provider",
+          "bucket",
+          "path_prefix",
+          "is_default",
+          "created_at"
+        ],
+        "title": "DestinationOut"
+      },
       "DestinationSpec": {
         "properties": {
           "type": {
@@ -1179,6 +1598,17 @@
             ],
             "title": "Path"
           },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
           "access_key_id": {
             "anyOf": [
               {
@@ -1200,25 +1630,31 @@
               }
             ],
             "title": "Secret Access Key"
-          }
-        },
-        "type": "object",
-        "title": "DestinationSpec",
-        "description": "Delivery target for the finished file.\n\n- `{\"id\": \"<connection-id>\"}` — a saved storage connection (Dashboard → Storage, or\n  `POST /v1/storage`). The provider is read from the connection, so `type` is optional\n  here and is ignored when the id is given.\n- `{\"type\": \"s3\"|\"r2\"|\"gcs\"|\"s3_compatible\", \"bucket\": \"...\", \"access_key_id\": \"...\",\n  \"secret_access_key\": \"...\"}` — inline credentials; stored as a connection for the\n  caller's account and reused by later jobs.\n- omitted, or `{\"type\": \"url\"}` — the platform keeps the file and returns a presigned\n  `download_url`.\n\n`bucket`, `endpoint`, `region`, `access_key_id`, `secret_access_key` and `path` are only\nread in the inline-credentials form: they describe the connection being created. `path`\nis that connection's object key prefix (default `youtube/{video_id}/`). All of them are\nignored when `id` is given — the saved connection already carries them."
-      },
-      "DestinationTest": {
-        "properties": {
-          "id": {
+          },
+          "save": {
+            "type": "boolean",
+            "title": "Save",
+            "default": false
+          },
+          "name": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 64
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Id"
-          },
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "title": "DestinationSpec",
+        "description": "Delivery target for the finished file.\n\n- `\"st_…\"` or `{\"id\": \"st_…\"}` — a saved storage connection (Dashboard → Storage, or\n  `POST /v1/storage`). Credentials, bucket and provider come from the connection; `type`\n  is ignored. `path` / `key` may override the object location for this job only.\n- `{\"type\": \"s3\"|\"r2\"|\"gcs\"|\"s3_compatible\", \"bucket\", \"access_key_id\",\n  \"secret_access_key\", ...}` — inline credentials. They are used for this job only and\n  discarded afterwards; pass `\"save\": true` to keep them as a connection (the response\n  then carries its `destination_id`, reuse it on later jobs).\n- `\"url\"` or `{\"type\": \"url\"}` — the platform keeps the file and returns a presigned\n  `download_url`, even when the account has a default storage connection.\n- omitted — the account's default storage connection if one is set, otherwise `url`.\n\n`path` is an object key prefix template, `key` a full object key template.\nVariables: `{video_id}` `{job_id}` `{date}` `{format}` (and `{ext}` in `key`)."
+      },
+      "DestinationTest": {
+        "properties": {
           "provider": {
             "type": "string",
             "enum": [
@@ -1277,6 +1713,76 @@
           "secret_access_key"
         ],
         "title": "DestinationTest"
+      },
+      "DestinationTestOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint"
+          },
+          "provider_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Code"
+          },
+          "probe_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probe Key"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/TestStepOut"
+            },
+            "type": "array",
+            "title": "Steps",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "message"
+        ],
+        "title": "DestinationTestOut"
       },
       "DestinationUpdate": {
         "properties": {
@@ -1517,9 +2023,14 @@
                 "$ref": "#/components/schemas/DestinationSpec"
               },
               {
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Destination",
+            "description": "Saved connection id (\"st_…\"), \"url\", or a destination object. Omitted = the account's default storage, else url."
           },
           "webhook_url": {
             "anyOf": [
@@ -1543,6 +2054,74 @@
           "url"
         ],
         "title": "DownloadCreate"
+      },
+      "DownloadErrorOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "retryable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retryable"
+          },
+          "provider_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Code"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "DownloadErrorOut"
       },
       "DownloadList": {
         "properties": {
@@ -1690,6 +2269,37 @@
               }
             ],
             "title": "Destination Type"
+          },
+          "destination_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Id"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DownloadErrorOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "download_url": {
             "anyOf": [
@@ -1913,6 +2523,108 @@
         },
         "type": "object",
         "title": "KeyCreate"
+      },
+      "RedeliverRequest": {
+        "properties": {
+          "destination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DestinationSpec"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination"
+          }
+        },
+        "type": "object",
+        "title": "RedeliverRequest",
+        "description": "Retry delivery of a held file. Omit `destination` to reuse the job's destination."
+      },
+      "StorageErrorOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "StorageErrorOut"
+      },
+      "TestStepOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "warning": {
+            "type": "boolean",
+            "title": "Warning",
+            "default": false
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "ok"
+        ],
+        "title": "TestStepOut"
       },
       "TrimSpec": {
         "properties": {

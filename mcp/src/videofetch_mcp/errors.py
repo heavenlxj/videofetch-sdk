@@ -8,6 +8,8 @@ Agent 场景下错误信息就是 prompt: 模型只能看到我们给它的那�
   402 quota_exceeded        →  额度用尽 → 充值/升级 (带上剩余额度与单价)
   403 permission_denied     →  这把 key 没权限
   404 not_found             →  job id 不存在 → 用 list_downloads 找
+  409 conflict              →  not_redeliverable → 查状态/重下
+  422 storage_*             →  存储配置被拒 → list_storage 找正确 id, 带 hint
   422 validation_error      →  参数错 → 指出哪个字段
   429 rate_limit_exceeded   →  并发/频率 → 带 Retry-After
   5xx api_error             →  服务端 → 可重试
@@ -46,10 +48,9 @@ def to_tool_error(exc: Exception) -> ToolError:
         )
     if isinstance(exc, vf_errors.PermissionDeniedError):
         return ToolError(
-            "permission_denied: this API key is not allowed to do that. Storage connections and "
-            "key management are dashboard-only (session auth) — a leaked API key must not be able "
-            "to redirect your files elsewhere. Ask the user to create the storage destination in "
-            "the dashboard and pass its id as destination_id."
+            "permission_denied: this API key is not allowed to do that (or the account is "
+            f"suspended). {_detail(exc)} Ask the user to check the key and account in the "
+            "VideoFetch dashboard. Do not retry this call as-is."
         )
     if isinstance(exc, vf_errors.QuotaExceededError):
         rem = getattr(exc, "remaining_gb", None)
@@ -60,6 +61,24 @@ def to_tool_error(exc: Exception) -> ToolError:
             "Next step: tell the user to top up pay-as-you-go credit or upgrade the plan, then "
             "retry. Retrying now will fail the same way."
         )
+    if isinstance(exc, vf_errors.StorageError):
+        code = getattr(exc, "code", None) or "storage_error"
+        hint = getattr(exc, "hint", None)
+        return ToolError(
+            f"{code}: the storage destination was rejected — {_detail(exc) or 'check destination_id'}."
+            + (f" Fix: {hint}." if hint else "")
+            + " Call list_storage to see valid st_… ids, or omit destination_id to use the default "
+              "storage (pass \"url\" for a platform link). Never ask the user for credentials."
+        )
+    if isinstance(exc, vf_errors.ConflictError):
+        code = getattr(exc, "code", None)
+        if code == "not_redeliverable":
+            return ToolError(
+                "not_redeliverable: this job cannot be redelivered — it did not fail at the delivery "
+                "stage, or its held copy expired (24h). Check get_download; if needed run "
+                "download_media again."
+            )
+        return ToolError(f"{code or 'conflict'}: {_detail(exc) or exc}")
     if isinstance(exc, vf_errors.ValidationError):
         return ToolError(
             f"validation_error: the request was rejected — {_detail(exc) or 'check the arguments'}. "
@@ -78,6 +97,15 @@ def to_tool_error(exc: Exception) -> ToolError:
             + (f"; retry after {ra:g}s" if ra is not None else "")
             + ". Queue up to 50 and 5 in flight are allowed per account. "
               "Wait, then retry — or submit in smaller batches."
+        )
+    if isinstance(exc, vf_errors.DeliveryFailedError):
+        hint = getattr(exc, "hint", None)
+        return ToolError(
+            f"{exc.error_code or 'delivery_failed'}: the video downloaded but could not be written to "
+            f"the user's storage — nothing was charged. {exc.error_message or ''}".rstrip()
+            + (f" Fix: {hint}." if hint else "")
+            + (f" Then call redeliver_download('{exc.job_id}')." if exc.redeliverable else
+               " The held copy expired; run download_media again after fixing it.")
         )
     if isinstance(exc, vf_errors.JobFailedError):
         msg = getattr(exc, "error_message", None) or getattr(exc, "error_code", None) or "unknown"

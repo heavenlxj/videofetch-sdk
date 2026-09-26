@@ -14,11 +14,12 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from videofetch_mcp import server
 
 EXPECTED_TOOLS = ["video_info", "download_media", "get_download",
-                  "list_downloads", "cancel_download", "account_usage"]
+                  "list_downloads", "cancel_download", "account_usage",
+                  "list_storage", "redeliver_download"]
 FORMATS = ["144p", "240p", "360p", "480p", "720p", "1080p", "1440p", "2160p", "mp3"]
 
 
-async def test_lists_exactly_six_tools(api):
+async def test_lists_exactly_eight_tools(api):
     async with create_connected_server_and_client_session(server.mcp) as s:
         res = await s.list_tools()
     assert [t.name for t in res.tools] == EXPECTED_TOOLS
@@ -45,6 +46,8 @@ async def test_download_tool_schema_is_agent_ready(api):
     assert tools["video_info"].annotations.readOnlyHint is True
     assert tools["account_usage"].annotations.readOnlyHint is True
     assert tools["cancel_download"].annotations.destructiveHint is True
+    assert tools["list_storage"].annotations.readOnlyHint is True
+    assert tools["redeliver_download"].annotations.destructiveHint is False
 
 
 async def test_server_instructions_teach_the_flow(api):

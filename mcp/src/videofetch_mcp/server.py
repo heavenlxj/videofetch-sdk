@@ -3,7 +3,7 @@
 ════════════════════════════════════════════════════════════════════════════
 设计原则 (面向 **Agent**, 不是面向人类 CLI —— 改动前先读)
 ════════════════════════════════════════════════════════════════════════════
-1. **工具少而高**: 6 个工具覆盖全流程。一次工具调用尽量把事做完 (建单 + 有界等待 + 落盘),
+1. **工具少而高**: 8 个工具覆盖全流程。一次工具调用尽量把事做完 (建单 + 有界等待 + 落盘),
    而不是把 5 个 HTTP 端点摊成 5 个工具让模型自己串 —— 模型串得越多, 失败和幻觉越多。
 2. **返回值是给模型看的**: 字段做减法 (只留决策要用的), 字节/时长带人类可读形式, 并附
    `next_step`。见 `formatting.py`。
@@ -12,7 +12,7 @@
 4. **失败要能自我纠正**: API 错误翻译成"可行动"的一句话 (含剩余额度/retry_after/下一步),
    见 `errors.py`。模型只看得见我们给它的那句话。
 5. **默认安全**: `save_to` 只能在白名单目录内 (防模型往 ~/.ssh 写东西); **不接受内联存储凭据**
-   (凭据进 prompt 就等于进日志)。要直传存储就用 Dashboard 建好的 destination_id。
+   (凭据进 prompt 就等于进日志)。要直传存储就用 Dashboard 建好的 st_ id (list_storage 可查)。
 
 工具清单:
   video_info         免费元数据 + 各格式预估体积 (不消耗额度)
@@ -21,6 +21,8 @@
   list_downloads     列任务 (支持 status/keyword 过滤)
   cancel_download    取消/删除任务 (未完成的会停止, 不计费)
   account_usage      套餐/用量/剩余额度/并发
+  list_storage       已连接的存储 (st_ id / 是否默认 / 健康状态), 只读
+  redeliver_download 投递失败后用保留副本重新上传 (不重下、不重复计费)
 """
 
 from __future__ import annotations
@@ -44,7 +46,7 @@ if TYPE_CHECKING:  # 只为类型标注, 运行时才 import (缺依赖时也能
     from videofetch import VideoFetch
 
 SERVER_NAME = "videofetch"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = "0.2.0"
 
 Format = Literal["144p", "240p", "360p", "480p", "720p", "1080p", "1440p", "2160p", "mp3"]
 
@@ -61,10 +63,15 @@ How to work with it:
      clips or grab a single song out of a long video, and it saves transfer.
    - save_to: have this server write the file to a local path (must live inside the configured
      output directory). Use it when the user asked for "the file on my machine".
-   - destination_id: deliver straight into the user's own bucket. The user creates destinations in
-     the VideoFetch dashboard; you can only reference an existing id (never pass credentials).
+   - destination_id: deliver straight into the user's own bucket. Omit it and the account's default
+     storage connection is used (or a platform link when there is none); `list_storage()` shows the
+     connected buckets and their `st_…` ids; pass "url" to force a platform link. The user connects
+     buckets in the VideoFetch dashboard — never ask for or pass credentials.
 3. If the result says status=queued/processing, the job is still running server-side: call
    `get_download(job_id)` again a little later. Nothing is broken, nothing was charged yet.
+4. If the file downloaded but could not be written to the bucket (`error.stage == "delivery"`), the
+   file is held for 24h. Tell the user what to fix (the `hint`), then call
+   `redeliver_download(job_id)` — no re-download, no extra charge.
 
 Billing: each COMPLETED job bills max(size, 20 MiB) once, at the account's per-GB rate. Failed and
 cancelled jobs are never charged. Call `account_usage()` before large batches.
@@ -117,6 +124,26 @@ def reset_clients() -> None:
 
 
 # ── save_to 目录白名单 ───────────────────────────────────────────────────────
+def _wait_bounded(job, budget: int):
+    """有界等待。超时**不是失败**: 刷新拿最新状态 (含排队位置) 后照常返回, 让模型去轮询。
+
+    投递失败 (文件已下好, 写不进用户的桶) 也不抛: 返回带 error/hint 的结果, 模型才能让用户修桶
+    然后 redeliver_download; 其余失败 (源站/网络) 交给 guard 翻译。
+    """
+    from videofetch import DeliveryFailedError
+
+    if budget <= 0:
+        return job.download
+    try:
+        return job.wait(timeout=budget)
+    except DeliveryFailedError as e:
+        return e.download
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) == "job_timeout":
+            return job.refresh()
+        raise
+
+
 def guard_save_path(raw: Optional[str], cfg: cfg_mod.Config) -> Optional[str]:
     """把模型给的路径约束在输出目录内。
 
@@ -172,7 +199,7 @@ def download_media(
     format: Annotated[Format, Field(description="Target quality: 144p-2160p MP4, or mp3 for audio only.")] = "720p",
     start: Annotated[Optional[float], Field(description="Clip window start in seconds (optional). Use with end to download only a slice.")] = None,
     end: Annotated[Optional[float], Field(description="Clip window end in seconds (optional). Must be greater than start.")] = None,
-    destination_id: Annotated[Optional[str], Field(description="Id of a storage destination the user already created in the VideoFetch dashboard. Omit to get a temporary platform link instead.")] = None,
+    destination_id: Annotated[Optional[str], Field(description="Storage id (st_…) of a bucket the user connected in the VideoFetch dashboard — see list_storage. Omit to use the account's default storage (or a platform link if none); pass \"url\" to force a temporary platform link.")] = None,
     webhook_url: Annotated[Optional[str], Field(description="HTTPS URL to be notified at when the job finishes (avoids polling entirely).")] = None,
     save_to: Annotated[Optional[str], Field(description="Local file path (or directory) to write the artifact to once it completes. Must be inside the server's allowed output directory.")] = None,
     wait_seconds: Annotated[int, Field(description="How long this call may block waiting for the job (0 = return immediately with the job id). Capped by the server config.")] = 120,
@@ -185,6 +212,8 @@ def download_media(
 
     Tips: for "make me a clip" pass start/end; for "just the audio" pass format="mp3"; for "put it in
     my bucket" pass destination_id; for "save it on my machine" pass save_to.
+    If the upload to the user's bucket fails, the result has `error.stage="delivery"` and a `hint`;
+    fix it with the user, then call redeliver_download.
     """
     cfg = cfg_mod.load()
     client = get_client(cfg)
@@ -205,22 +234,12 @@ def download_media(
     job = client.downloads.create(
         url, format,
         trim=trim,
-        # 只带 id: 真实 provider 由后端从库里取 (见 backend/routes/downloads.py 的 destination 分支)
-        destination={"id": destination_id} if destination_id else None,
+        # 字符串简写 "st_…" / "url": 真实 provider / 凭据由后端从库里取, 模型永远碰不到凭据
+        destination=destination_id.strip() if destination_id and destination_id.strip() else None,
         webhook_url=webhook_url,
     )
 
-    dl = job.download
-    if budget > 0:
-        try:
-            dl = job.wait(timeout=budget)
-        except Exception as e:  # noqa: BLE001
-            # 超时**不是失败**: 任务还在服务端跑。刷新拿最新状态 (含排队位置) 后照常返回,
-            # 让模型去轮询; 其余错误 (job failed / 网络) 交给 guard 翻译。
-            if getattr(e, "code", None) == "job_timeout":
-                dl = job.refresh()
-            else:
-                raise
+    dl = _wait_bounded(job, budget)
 
     saved: Optional[str] = None
     if target and dl.status == "completed":
@@ -312,6 +331,46 @@ def account_usage() -> dict:
     return fmt.shape_usage(get_client(cfg).usage.get())
 
 
+@mcp.tool(
+    title="List connected storage",
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+)
+@guard
+def list_storage() -> dict:
+    """The buckets (S3 / R2 / GCS / S3-compatible) the user connected, with their `st_…` ids.
+
+    Pass an id as `destination_id` to download_media. The default connection is used automatically
+    when destination_id is omitted. A connection with status "failing" will reject uploads until the
+    user fixes it in the dashboard (the last error says why). Credentials are never returned.
+    """
+    cfg = cfg_mod.load()
+    return fmt.shape_storage_list(get_client(cfg).storage.list())
+
+
+@mcp.tool(
+    title="Retry delivery to storage",
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True),
+)
+@guard
+def redeliver_download(
+    job_id: Annotated[str, Field(description="Job whose upload to storage failed (error.stage == \"delivery\").")],
+    destination_id: Annotated[Optional[str], Field(description="Deliver somewhere else instead: a storage id (st_…) or \"url\" for a platform link. Omit to retry the original bucket.")] = None,
+    wait_seconds: Annotated[int, Field(description="How long this call may block waiting for the upload (0 = return immediately).")] = 60,
+) -> dict:
+    """Upload a held file again after a delivery failure — no re-download and no extra charge.
+
+    Only works while the job is `failed` at the delivery stage and the hold has not expired
+    (`redeliverable: true`, 24h). Fix the cause first (the previous result's `hint`), or pass another
+    destination_id. Blocking is bounded like download_media.
+    """
+    cfg = cfg_mod.load()
+    client = get_client(cfg)
+    dest = destination_id.strip() if destination_id and destination_id.strip() else None
+    job = client.downloads.redeliver(job_id, destination=dest)
+    budget = max(0, min(int(wait_seconds or 0), cfg.max_wait_seconds))
+    return fmt.shape_download(_wait_bounded(job, budget), cfg=cfg)
+
+
 # ── 提示模板 (MCP prompt): 让客户端一键起手 ──────────────────────────────────
 @mcp.prompt(title="Download a video into my storage")
 def download_prompt(url: str, format: str = "720p") -> str:
@@ -322,8 +381,9 @@ def download_prompt(url: str, format: str = "720p") -> str:
         "1. video_info(url) to confirm the title/duration and that the format exists.\n"
         f"2. download_media(url, format=\"{format}\") — if it comes back queued/processing, keep "
         "calling get_download(job_id) until it is terminal.\n"
-        "3. Summarise: title, duration, final size, where the file went (link or storage_key), and "
-        "the cost. If it failed, say why and confirm nothing was charged."
+        "3. Summarise: title, duration, final size, where the file went (link or storage uri), and "
+        "the cost. If it failed, say why and confirm nothing was charged. If only the delivery to "
+        "storage failed, relay the hint and offer redeliver_download once it is fixed."
     )
 
 

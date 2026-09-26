@@ -6,6 +6,7 @@
 import { mapError, VideoFetchError } from "./errors";
 import { DownloadsResource } from "./downloads";
 import { InfoResource } from "./info";
+import { StorageResource } from "./storage";
 import { UsageResource } from "./usage";
 import { WebhooksResource } from "./webhooks";
 
@@ -48,6 +49,7 @@ export class VideoFetch {
   info: InfoResource;
   usage: UsageResource;
   webhooks: WebhooksResource;
+  storage: StorageResource;
 
   constructor(options: VideoFetchOptions = {}) {
     this.apiKey = options.apiKey ?? (typeof process !== "undefined" ? process.env?.VIDEOFETCH_API_KEY : undefined) ?? "";
@@ -64,6 +66,7 @@ export class VideoFetch {
     this.info = new InfoResource(this);
     this.usage = new UsageResource(this);
     this.webhooks = new WebhooksResource(this);
+    this.storage = new StorageResource(this);
   }
 
   /**

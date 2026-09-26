@@ -19,14 +19,16 @@ from .client import DEFAULT_JOB_TIMEOUT, _poll_delay
 from .errors import (
     DownloadNotCompletedError,
     DownloadURLUnavailableError,
-    JobFailedError,
     VideoFetchError,
+    job_failed_error,
     map_error,
 )
 from .models import (
     Download,
     DownloadList,
     ReplayResult,
+    StorageConnection,
+    StorageTestResult,
     TrimSpec,
     Usage,
     UsageAlerts,
@@ -40,6 +42,7 @@ from .models import (
 TERMINAL = ("completed", "failed", "deleted")
 
 PathLike = Union[str, os.PathLike]
+Destination = Union[str, dict, None]
 _DOWNLOAD_CHUNK_SIZE = 64 * 1024
 _MAX_FILENAME_LEN = 80
 # Path separators, control characters and characters no sane filesystem wants.
@@ -84,9 +87,7 @@ def _resolve_target_path(download: Download, path: Optional[PathLike]) -> str:
 def _ensure_downloadable(download: Download) -> str:
     """Validate the job is ready and return its download_url."""
     if download.status == "failed":
-        raise JobFailedError(
-            job_id=download.id, error_code=download.error_code,
-            error_message=download.error_message)
+        raise job_failed_error(download)
     if download.status != "completed":
         raise DownloadNotCompletedError(job_id=download.id, status=download.status)
     if not download.download_url:
@@ -132,6 +133,22 @@ def _build_trim(trim: Optional[TrimSpec], trim_start: Optional[float],
     return trim.to_dict() if trim else None
 
 
+def _destination(value: Destination) -> Union[str, dict]:
+    """Accept ``"st_…"`` / ``"url"`` shorthands or a dict, reject anything else early."""
+    if isinstance(value, str):
+        v = value.strip()
+        if not v:
+            raise ValueError("destination must not be empty")
+        return v
+    if isinstance(value, dict):
+        return dict(value)
+    raise TypeError("destination must be a storage id string, 'url', or a dict")
+
+
+def _storage_body(**fields) -> dict:
+    return {k: v for k, v in fields.items() if v is not None}
+
+
 # ────────────────────────── Sync resources ───────────────────────
 class DownloadsResource:
     def __init__(self, client):
@@ -141,7 +158,7 @@ class DownloadsResource:
                trim: Optional[TrimSpec] = None,
                trim_start: Optional[float] = None,
                trim_end: Optional[float] = None,
-               destination: Optional[dict] = None,
+               destination: Destination = None,
                webhook_url: Optional[str] = None,
                **extra: dict) -> DownloadJob:
         """Create a download job. Returns immediately with status 'queued'.
@@ -152,21 +169,26 @@ class DownloadsResource:
 
         ``destination`` decides where the finished file lands:
 
-        * ``{"id": "..."}`` — a saved storage connection. The provider is read from
-          the connection, so you do not need to know it (``type`` is optional here
-          and ignored when the id is given).
+        * omitted — your account's default storage connection, or the platform
+          (presigned ``download_url``, 7 days) when no default is set.
+        * ``"st_…"`` or ``{"id": "st_…", "path"|"key": ...}`` — a saved connection
+          (Dashboard → Storage or ``client.storage.create``). Bucket, region and
+          credentials are read from it; ``path`` / ``key`` override the object key
+          for this job only.
+        * ``"url"`` — force platform delivery even when a default is set.
         * ``{"type": "s3"|"r2"|"gcs"|"s3_compatible", "bucket": ..., "access_key_id":
-          ..., "secret_access_key": ...}`` — inline credentials, stored as a
-          connection for your account. ``type`` is required in this form.
-        * omitted, or ``{"type": "url"}`` — the platform keeps the file and returns a
-          presigned ``download_url`` (7 days).
+          ..., "secret_access_key": ...}`` — inline credentials used for this job
+          only; add ``"save": True`` (and ``"name"``) to keep them as a connection.
+
+        A bad destination raises :class:`StorageError` (422) immediately; an upload
+        failure fails the job with :class:`DeliveryFailedError` from ``job.wait()``.
         """
         body: dict = {"url": url, "format": format, **extra}
         t = _build_trim(trim, trim_start, trim_end)
         if t:
             body["trim"] = t
         if destination:
-            body["destination"] = destination
+            body["destination"] = _destination(destination)
         if webhook_url:
             body["webhook_url"] = webhook_url
         data = self._client.request("POST", "/v1/downloads", json_body=body)
@@ -189,6 +211,18 @@ class DownloadsResource:
     def cancel(self, download_id: str) -> None:
         """Cancel/delete a job (queued/processing). Safe to call on any state."""
         self._client.request("DELETE", f"/v1/downloads/{download_id}")
+
+    def redeliver(self, download_id: str, destination: Destination = None) -> DownloadJob:
+        """Retry the upload of a job that failed at delivery, from the held copy.
+
+        Omit ``destination`` to reuse the job's original target, or pass another one
+        (same forms as :meth:`create`). Nothing is downloaded or charged again.
+        Raises :class:`ConflictError` (``not_redeliverable``) when the job did not fail
+        at delivery or the hold (``delivery.hold_expires_at``) has expired.
+        """
+        body = {"destination": _destination(destination)} if destination else {}
+        data = self._client.request("POST", f"/v1/downloads/{download_id}/redeliver", json_body=body)
+        return DownloadJob(self._client, Download.from_dict(data))
 
     def download_to(self, download_id: str, path: Optional[PathLike] = None) -> str:
         """Stream a completed job's artifact to a local file; return its absolute path.
@@ -300,8 +334,7 @@ class DownloadJob:
     @staticmethod
     def _raise_if_failed(dl: Download) -> Download:
         if dl.status == "failed":
-            raise JobFailedError(
-                job_id=dl.id, error_code=dl.error_code, error_message=dl.error_message)
+            raise job_failed_error(dl)
         return dl
 
 
@@ -323,7 +356,7 @@ class AsyncDownloadsResource:
                      trim: Optional[TrimSpec] = None,
                      trim_start: Optional[float] = None,
                      trim_end: Optional[float] = None,
-                     destination: Optional[dict] = None,
+                     destination: Destination = None,
                      webhook_url: Optional[str] = None,
                      **extra: dict) -> AsyncDownloadJob:
         body: dict = {"url": url, "format": format, **extra}
@@ -331,7 +364,7 @@ class AsyncDownloadsResource:
         if t:
             body["trim"] = t
         if destination:
-            body["destination"] = destination
+            body["destination"] = _destination(destination)
         if webhook_url:
             body["webhook_url"] = webhook_url
         data = await self._client.request("POST", "/v1/downloads", json_body=body)
@@ -353,6 +386,11 @@ class AsyncDownloadsResource:
 
     async def cancel(self, download_id: str) -> None:
         await self._client.request("DELETE", f"/v1/downloads/{download_id}")
+
+    async def redeliver(self, download_id: str, destination: Destination = None) -> AsyncDownloadJob:
+        body = {"destination": _destination(destination)} if destination else {}
+        data = await self._client.request("POST", f"/v1/downloads/{download_id}/redeliver", json_body=body)
+        return AsyncDownloadJob(self._client, Download.from_dict(data))
 
     async def download_to(self, download_id: str, path: Optional[PathLike] = None) -> str:
         """Async twin of :meth:`DownloadsResource.download_to` — streams to disk.
@@ -451,8 +489,7 @@ class AsyncDownloadJob:
     @staticmethod
     def _raise_if_failed(dl: Download) -> Download:
         if dl.status == "failed":
-            raise JobFailedError(
-                job_id=dl.id, error_code=dl.error_code, error_message=dl.error_message)
+            raise job_failed_error(dl)
         return dl
 
 
@@ -577,3 +614,114 @@ class AsyncWebhooksResource:
         data = await self._client.request(
             "POST", f"/v1/webhooks/deliveries/{event_id}/replay")
         return ReplayResult.from_dict(data)
+
+
+# ────────────────────────── Storage connections (v0.5.0) ─────────────────────
+class StorageResource:
+    """Saved storage connections (``st_…``). Pass the id as ``destination``.
+
+    Create a connection once (here or in Dashboard → Storage) and reference it by id
+    from every job; set ``is_default=True`` and jobs without a destination go there.
+    """
+
+    def __init__(self, client):
+        self._client = client
+
+    def list(self) -> list[StorageConnection]:
+        data = self._client.request("GET", "/v1/storage")
+        return [StorageConnection.from_dict(i) for i in (data.get("items") or [])]
+
+    def retrieve(self, storage_id: str) -> StorageConnection:
+        return StorageConnection.from_dict(self._client.request("GET", f"/v1/storage/{storage_id}"))
+
+    def create(self, *, provider: str, bucket: str, access_key_id: str, secret_access_key: str,
+               name: Optional[str] = None, endpoint: Optional[str] = None,
+               region: Optional[str] = None, path_prefix: Optional[str] = None,
+               is_default: bool = False) -> StorageConnection:
+        """Save a connection. The config is validated (422 :class:`StorageError`) but not
+        probed — call :meth:`test` first to check reachability and write permission."""
+        body = _storage_body(provider=provider, bucket=bucket, access_key_id=access_key_id,
+                             secret_access_key=secret_access_key, name=name, endpoint=endpoint,
+                             region=region, path_prefix=path_prefix, is_default=is_default)
+        return StorageConnection.from_dict(self._client.request("POST", "/v1/storage", json_body=body))
+
+    def update(self, storage_id: str, *, name: Optional[str] = None, endpoint: Optional[str] = None,
+               region: Optional[str] = None, path_prefix: Optional[str] = None,
+               access_key_id: Optional[str] = None, secret_access_key: Optional[str] = None,
+               is_default: Optional[bool] = None) -> StorageConnection:
+        """Change fields; passing both keys rotates credentials and resets ``status``."""
+        body = _storage_body(name=name, endpoint=endpoint, region=region, path_prefix=path_prefix,
+                             access_key_id=access_key_id, secret_access_key=secret_access_key,
+                             is_default=is_default)
+        return StorageConnection.from_dict(
+            self._client.request("PUT", f"/v1/storage/{storage_id}", json_body=body))
+
+    def delete(self, storage_id: str, *, force: bool = False) -> None:
+        """Delete a connection. Raises :class:`ConflictError` (``storage_in_use``) while
+        queued/processing jobs target it, unless ``force=True``."""
+        self._client.request("DELETE", f"/v1/storage/{storage_id}",
+                             params={"force": "true"} if force else None)
+
+    def test(self, storage_id: Optional[str] = None, *, provider: Optional[str] = None,
+             bucket: Optional[str] = None, access_key_id: Optional[str] = None,
+             secret_access_key: Optional[str] = None, endpoint: Optional[str] = None,
+             region: Optional[str] = None, path_prefix: Optional[str] = None) -> StorageTestResult:
+        """Probe a saved connection (``test("st_…")``) or unsaved credentials (keywords).
+
+        Writes and removes a small object. A failed probe returns ``ok=False`` with a
+        ``storage_*`` code and per-step results; only a malformed config raises."""
+        if storage_id:
+            return StorageTestResult.from_dict(
+                self._client.request("POST", f"/v1/storage/{storage_id}/test"))
+        body = _storage_body(provider=provider or "s3", bucket=bucket, access_key_id=access_key_id,
+                             secret_access_key=secret_access_key, endpoint=endpoint, region=region,
+                             path_prefix=path_prefix)
+        return StorageTestResult.from_dict(self._client.request("POST", "/v1/storage/test", json_body=body))
+
+
+class AsyncStorageResource:
+    def __init__(self, client):
+        self._client = client
+
+    async def list(self) -> list[StorageConnection]:
+        data = await self._client.request("GET", "/v1/storage")
+        return [StorageConnection.from_dict(i) for i in (data.get("items") or [])]
+
+    async def retrieve(self, storage_id: str) -> StorageConnection:
+        return StorageConnection.from_dict(await self._client.request("GET", f"/v1/storage/{storage_id}"))
+
+    async def create(self, *, provider: str, bucket: str, access_key_id: str, secret_access_key: str,
+                     name: Optional[str] = None, endpoint: Optional[str] = None,
+                     region: Optional[str] = None, path_prefix: Optional[str] = None,
+                     is_default: bool = False) -> StorageConnection:
+        body = _storage_body(provider=provider, bucket=bucket, access_key_id=access_key_id,
+                             secret_access_key=secret_access_key, name=name, endpoint=endpoint,
+                             region=region, path_prefix=path_prefix, is_default=is_default)
+        return StorageConnection.from_dict(await self._client.request("POST", "/v1/storage", json_body=body))
+
+    async def update(self, storage_id: str, *, name: Optional[str] = None, endpoint: Optional[str] = None,
+                     region: Optional[str] = None, path_prefix: Optional[str] = None,
+                     access_key_id: Optional[str] = None, secret_access_key: Optional[str] = None,
+                     is_default: Optional[bool] = None) -> StorageConnection:
+        body = _storage_body(name=name, endpoint=endpoint, region=region, path_prefix=path_prefix,
+                             access_key_id=access_key_id, secret_access_key=secret_access_key,
+                             is_default=is_default)
+        return StorageConnection.from_dict(
+            await self._client.request("PUT", f"/v1/storage/{storage_id}", json_body=body))
+
+    async def delete(self, storage_id: str, *, force: bool = False) -> None:
+        await self._client.request("DELETE", f"/v1/storage/{storage_id}",
+                                   params={"force": "true"} if force else None)
+
+    async def test(self, storage_id: Optional[str] = None, *, provider: Optional[str] = None,
+                   bucket: Optional[str] = None, access_key_id: Optional[str] = None,
+                   secret_access_key: Optional[str] = None, endpoint: Optional[str] = None,
+                   region: Optional[str] = None, path_prefix: Optional[str] = None) -> StorageTestResult:
+        if storage_id:
+            return StorageTestResult.from_dict(
+                await self._client.request("POST", f"/v1/storage/{storage_id}/test"))
+        body = _storage_body(provider=provider or "s3", bucket=bucket, access_key_id=access_key_id,
+                             secret_access_key=secret_access_key, endpoint=endpoint, region=region,
+                             path_prefix=path_prefix)
+        return StorageTestResult.from_dict(
+            await self._client.request("POST", "/v1/storage/test", json_body=body))

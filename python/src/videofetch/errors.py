@@ -17,6 +17,11 @@ v0.3.0 error semantics:
   download_to() local-save preconditions:
     DownloadNotCompletedError — status is not "completed" yet (code=job_not_completed).
     DownloadURLUnavailableError — completed but no download_url (code=download_url_unavailable).
+
+v0.5.0 error semantics:
+  422  StorageError          — destination rejected at create time; carries param + hint.
+  409  ConflictError         — code ∈ {storage_in_use, not_redeliverable}.
+  job  DeliveryFailedError   — JobFailedError with stage="delivery"; carries redeliverable.
 """
 
 from __future__ import annotations
@@ -105,13 +110,35 @@ class ApiError(VideoFetchError):
     """Server-side failure (5xx) or unknown non-2xx."""
 
 
+class StorageError(ValidationError):
+    """A storage destination was rejected when the job was created (422).
+
+    code ∈ {storage_not_found, storage_config_invalid, storage_endpoint_blocked,
+    storage_unreachable}. `param` points at the offending field (e.g.
+    ``destination.endpoint``) and `hint` says how to fix it.
+    """
+
+    def __init__(self, message: str, *, hint: Optional[str] = None, **kw):
+        super().__init__(message, **kw)
+        self.hint = hint
+
+
+class ConflictError(VideoFetchError):
+    """The request conflicts with the resource state (409).
+
+    code ∈ {storage_in_use (delete with force=True), not_redeliverable}.
+    """
+
+
 class JobFailedError(VideoFetchError):
     """The download job reached a terminal failed state.
 
     A failed download is never charged — see job.failed_not_charged.
+    `stage` / `retryable` / `hint` / `provider_code` come from ``Download.error``.
     """
 
-    def __init__(self, *, job_id: str, error_code: Optional[str], error_message: Optional[str]):
+    def __init__(self, *, job_id: str, error_code: Optional[str], error_message: Optional[str],
+                 download=None):
         super().__init__(
             f"Download job {job_id} failed"
             + (f" [{error_code}]: {error_message}" if error_code or error_message else ""),
@@ -121,6 +148,40 @@ class JobFailedError(VideoFetchError):
         self.error_code = error_code
         self.error_message = error_message
         self.failed_not_charged = True
+        self.download = download
+        err = getattr(download, "error", None)
+        self.stage: Optional[str] = getattr(err, "stage", None)
+        self.retryable: Optional[bool] = getattr(err, "retryable", None)
+        self.hint: Optional[str] = getattr(err, "hint", None)
+        self.provider_code: Optional[str] = getattr(err, "provider_code", None)
+
+
+class DeliveryFailedError(JobFailedError):
+    """The file was downloaded but could not be written to your storage.
+
+    code is one of storage_unreachable, storage_auth_failed, storage_permission_denied,
+    storage_bucket_not_found, storage_region_mismatch, storage_rate_limited,
+    storage_quota_exceeded, storage_upload_failed, storage_not_found. When `redeliverable`
+    is True the file is held until `hold_expires_at`; fix the bucket and call
+    ``client.downloads.redeliver(job_id)`` — nothing is downloaded or charged again.
+    """
+
+    @property
+    def redeliverable(self) -> bool:
+        d = getattr(self.download, "delivery", None)
+        return bool(d and d.redeliverable)
+
+    @property
+    def hold_expires_at(self) -> Optional[str]:
+        d = getattr(self.download, "delivery", None)
+        return d.hold_expires_at if d else None
+
+
+def job_failed_error(dl) -> JobFailedError:
+    """The right JobFailedError subclass for a failed Download."""
+    err = getattr(dl, "error", None)
+    cls = DeliveryFailedError if err is not None and err.stage == "delivery" else JobFailedError
+    return cls(job_id=dl.id, error_code=dl.error_code, error_message=dl.error_message, download=dl)
 
 
 class DownloadNotCompletedError(VideoFetchError):
@@ -204,9 +265,14 @@ def map_error(status_code: int, body: object, *, message: Optional[str] = None,
             msg, code=code, status_code=status_code, param=param, response_body=body,
             remaining_gb=_as_float(extra.get("remaining_gb")))
     if status_code in (400, 422):
+        if code and str(code).startswith("storage_"):
+            return StorageError(msg, code=code, status_code=status_code, param=param,
+                                response_body=body, hint=extra.get("hint"))
         return ValidationError(msg, code=code, status_code=status_code, param=param, response_body=body)
     if status_code == 404:
         return NotFoundError(msg, code=code, status_code=status_code, param=param, response_body=body)
+    if status_code == 409:
+        return ConflictError(msg, code=code, status_code=status_code, param=param, response_body=body)
     if status_code == 429:
         return RateLimitError(
             msg, code=code, status_code=status_code, param=param, response_body=body,

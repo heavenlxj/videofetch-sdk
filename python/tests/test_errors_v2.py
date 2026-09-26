@@ -143,4 +143,4 @@ def test_permission_denied_exported_and_subclass():
 
 
 def test_version_bumped_to_0_4_0():
-    assert videofetch.__version__ == "0.4.0"
+    assert videofetch.__version__ == "0.5.0"

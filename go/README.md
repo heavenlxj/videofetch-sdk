@@ -87,37 +87,67 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 ## Storage destinations
 
-By default the platform keeps the finished file and returns a presigned `DownloadURL`
-(valid 7 days). Set `Destination` to have it written straight into your own bucket
-instead — the job then reports `StorageKey` as `user://<bucket>/<key>` and `DownloadURL`
-is nil. Billing is identical either way, and failed or cancelled jobs are never charged.
+Connect a bucket once and reference it by its storage id (`st_…`) from every job — the
+provider, bucket, region and credentials stay on the server. Billing is identical to
+platform delivery, and failed or cancelled jobs are never charged.
 
 ```go
-// A saved connection. Connect the bucket once (Dashboard → Storage, or POST /v1/storage)
-// and reuse the id: the provider, bucket and credentials all come from the connection,
-// so you never have to know — or repeat — the provider.
-job, err := client.Downloads.Create(ctx, videofetch.DownloadCreateParams{
-    URL:         url,
-    Format:      videofetch.Format1080p,
-    Destination: &videofetch.DestinationSpec{ID: "conn_9f1c2a34"},
+// 1. Connect once (or Dashboard → Storage). Test probes connect → write → cleanup.
+check, err := client.Storage.Test(ctx, videofetch.StorageTestParams{
+    Provider: "s3", Bucket: "my-bucket", Region: "us-east-1",
+    AccessKeyID: "AKIA...", SecretAccessKey: "...",
 })
+if err == nil && !check.OK {
+    log.Fatalf("%s: %s", *check.Code, check.Message)
+}
+conn, err := client.Storage.Create(ctx, videofetch.StorageCreateParams{
+    Provider: "s3", Bucket: "my-bucket", Region: "us-east-1",
+    AccessKeyID: "AKIA...", SecretAccessKey: "...", IsDefault: true,
+})
+fmt.Println(conn.ID) // st_9f1c2a34b5d6e7f8
 
-// Inline credentials. These are stored as a connection for your account and reused by
-// later jobs. Type is required in this form — without a concrete provider the server
-// falls back to "url" and would ignore the bucket.
-job, err = client.Downloads.Create(ctx, videofetch.DownloadCreateParams{
-    URL:    url,
-    Format: videofetch.Format1080p,
-    Destination: &videofetch.DestinationSpec{
-        Type:            "s3", // s3 | r2 | gcs | s3_compatible
-        Bucket:          "my-bucket",
-        Region:          "us-east-1",
-        AccessKeyID:     "...",
-        SecretAccessKey: "...",
-        Path:            "videos/", // optional; key prefix of the new connection
-    },
-})
+// 2. Reference it. The result says exactly where the file landed.
+dl, err := client.Downloads.CreateAndWait(ctx, videofetch.DownloadCreateParams{
+    URL:         url,
+    Destination: videofetch.StorageID(conn.ID),
+}, 0)
+fmt.Println(*dl.Delivery.URI) // s3://my-bucket/youtube/<video_id>/video.mp4
 ```
+
+| `Destination` | where the file goes |
+|---|---|
+| `nil` | the account's default connection, else the platform (`DownloadURL`, 7 days) |
+| `videofetch.StorageID("st_…")` | that saved connection |
+| `&DestinationSpec{ID: "st_…", Path: "clips/{video_id}/"}` (or `Key: "a/{video_id}.{ext}"`) | saved connection, object key overridden for this job only |
+| `videofetch.PlatformURL()` | the platform, even when a default connection is set |
+| `&DestinationSpec{Type: "s3", Bucket, AccessKeyID, SecretAccessKey}` | inline credentials for **this job only**; set `Save: true, Name: …` to keep them |
+
+Path variables: `{video_id}`, `{job_id}`, `{format}`, `{date}` (`Key` also accepts `{ext}`).
+
+### When delivery fails
+
+A bad destination is rejected up front with `*StorageError` (422 — `storage_not_found`,
+`storage_config_invalid`, `storage_endpoint_blocked`, `storage_unreachable`); `Param` names
+the field and `Hint` says how to fix it. An upload that fails after the download makes
+`Wait` return a `*JobFailedError` with `Stage == "delivery"` (also matched by
+`errors.Is(err, videofetch.ErrDeliveryFailed)`). The file is held for 24 hours, so fix the
+bucket and redeliver — nothing is downloaded or charged again:
+
+```go
+var jf *videofetch.JobFailedError
+if errors.As(err, &jf) && errors.Is(err, videofetch.ErrDeliveryFailed) && jf.Redeliverable() {
+    log.Printf("%s %s: %s", jf.ErrorCode, jf.ProviderCode, jf.Hint) // storage_permission_denied AccessDenied …
+    job, _ := client.Downloads.Redeliver(ctx, jf.JobID, nil)      // or another StorageID(...)
+    dl, err = job.Wait(ctx, 0)
+}
+```
+
+Delivery error codes: `storage_unreachable`, `storage_auth_failed`,
+`storage_permission_denied`, `storage_bucket_not_found`, `storage_region_mismatch`,
+`storage_rate_limited`, `storage_quota_exceeded`, `storage_upload_failed`,
+`storage_not_found`. `Retryable` is true for transient ones (uploads are already retried
+3 times). A permanent failure marks the connection `Status == "failing"` and sends the
+`storage.connection_failed` webhook once.
 
 ## Configuration
 
@@ -128,9 +158,12 @@ job, err = client.Downloads.Create(ctx, videofetch.DownloadCreateParams{
 
 ## Errors
 
-- `*APIError` — HTTP errors with `.Code`, `.Message`, `.Param`, `.StatusCode`
+- `*APIError` — HTTP errors with `.Code`, `.Message`, `.Param`, `.Hint`, `.StatusCode`
 - `*QuotaExceededError` — 402 monthly quota exhausted
-- `*JobFailedError` — job reached `failed` (**never charged**)
+- `*StorageError` — 422 `storage_*`, destination rejected at create time
+- `*ConflictError` — 409 `storage_in_use` (`Storage.Delete(ctx, id, true)` forces) / `not_redeliverable`
+- `*JobFailedError` — job reached `failed` (**never charged**); `.Stage`, `.Retryable`, `.Hint`,
+  `.ProviderCode`, `.Redeliverable()`; wraps `ErrDeliveryFailed` for delivery-stage failures
 
 ## Serverless warning
 

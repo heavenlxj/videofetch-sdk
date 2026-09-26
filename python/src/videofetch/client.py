@@ -56,6 +56,7 @@ class VideoFetch:
     info: "InfoResource"
     usage: "UsageResource"
     webhooks: "WebhooksResource"
+    storage: "StorageResource"
 
     def __init__(self, api_key: Optional[str] = None, *, base_url: str = DEFAULT_BASE_URL,
                  timeout: float = DEFAULT_TIMEOUT, max_retries: int = DEFAULT_MAX_RETRIES,
@@ -75,11 +76,18 @@ class VideoFetch:
             trust_env=False,
         )
         # lazy import avoids circular dependency (resources imports client)
-        from .resources import DownloadsResource, InfoResource, UsageResource, WebhooksResource
+        from .resources import (
+            DownloadsResource,
+            InfoResource,
+            StorageResource,
+            UsageResource,
+            WebhooksResource,
+        )
         self.downloads = DownloadsResource(self)
         self.info = InfoResource(self)
         self.usage = UsageResource(self)
         self.webhooks = WebhooksResource(self)
+        self.storage = StorageResource(self)
 
     def request(self, method: str, path: str, *, json_body: Optional[dict] = None,
                 params: Optional[dict] = None) -> Any:
@@ -136,6 +144,7 @@ class AsyncVideoFetch:
     info: "AsyncInfoResource"
     usage: "AsyncUsageResource"
     webhooks: "AsyncWebhooksResource"
+    storage: "AsyncStorageResource"
 
     def __init__(self, api_key: Optional[str] = None, *, base_url: str = DEFAULT_BASE_URL,
                  timeout: float = DEFAULT_TIMEOUT, max_retries: int = DEFAULT_MAX_RETRIES,
@@ -153,6 +162,7 @@ class AsyncVideoFetch:
         from .resources import (
             AsyncDownloadsResource,
             AsyncInfoResource,
+            AsyncStorageResource,
             AsyncUsageResource,
             AsyncWebhooksResource,
         )
@@ -160,6 +170,7 @@ class AsyncVideoFetch:
         self.info = AsyncInfoResource(self)
         self.usage = AsyncUsageResource(self)
         self.webhooks = AsyncWebhooksResource(self)
+        self.storage = AsyncStorageResource(self)
 
     async def request(self, method: str, path: str, *, json_body: Optional[dict] = None,
                       params: Optional[dict] = None) -> Any:

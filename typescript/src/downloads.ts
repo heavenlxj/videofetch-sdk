@@ -8,9 +8,9 @@
  */
 
 import { VideoFetch } from "./client";
-import { JobFailedError, VideoFetchError } from "./errors";
+import { VideoFetchError, jobFailedError } from "./errors";
 import {
-  Download, DownloadCreateParams, DownloadFormat, DownloadList, isTerminal,
+  DestinationInput, Download, DownloadCreateParams, DownloadFormat, DownloadList, isTerminal,
 } from "./types";
 
 export const DEFAULT_JOB_TIMEOUT_MS = 120_000;
@@ -140,7 +140,8 @@ export class DownloadJob {
    * Poll until terminal (completed / failed / deleted).
    *
    * - Network errors never abort; we keep polling until timeout.
-   * - A failed job throws JobFailedError (failed downloads are never charged).
+   * - A failed job throws JobFailedError (failed downloads are never charged);
+   *   a delivery-stage failure throws its subclass DeliveryFailedError.
    * - timeoutMs: 0/undefined = wait forever. Cancelling locally does NOT cancel
    *   the server-side job — call client.downloads.cancel(id) for that.
    * - Serverless warning: do not call wait() inside a Vercel/CF/Lambda function.
@@ -186,9 +187,18 @@ export class DownloadJob {
 
 function raiseIfFailed(dl: Download): Download {
   if (dl.status === "failed") {
-    throw new JobFailedError(dl.id, dl.error_code ?? null, dl.error_message ?? null);
+    throw jobFailedError(dl);
   }
   return dl;
+}
+
+function normalizeDestination(d: DestinationInput): DestinationInput {
+  if (typeof d === "string") {
+    const v = d.trim();
+    if (!v) throw new VideoFetchError("destination must not be empty", { code: "invalid_destination" });
+    return v;
+  }
+  return d;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -198,14 +208,21 @@ function sleep(ms: number): Promise<void> {
 export class DownloadsResource {
   constructor(private client: VideoFetch) {}
 
-  /** POST /v1/downloads — returns immediately with a queued job handle. */
+  /**
+   * POST /v1/downloads — returns immediately with a queued job handle.
+   *
+   * `destination`: omit for the account default connection (else the platform), `"st_…"`
+   * for a saved connection, `"url"` to force the platform, `{ id, path | key }` for a per-job
+   * key, or inline credentials (this job only; `save: true` keeps them). A bad destination
+   * throws {@link StorageError} (422) here; an upload failure surfaces from `job.wait()`.
+   */
   async create(params: DownloadCreateParams): Promise<DownloadJob> {
     const body: Record<string, unknown> = {
       url: params.url,
       format: (params.format ?? "720p") as DownloadFormat,
     };
     if (params.trim) body.trim = params.trim;
-    if (params.destination) body.destination = params.destination;
+    if (params.destination) body.destination = normalizeDestination(params.destination);
     if (params.webhook_url) body.webhook_url = params.webhook_url;
 
     const data = await this.client.request<Download>("POST", "/v1/downloads", { json: body });
@@ -227,6 +244,19 @@ export class DownloadsResource {
   /** DELETE /v1/downloads/{id} — cancel a queued/processing job (or delete a finished one). */
   async cancel(id: string): Promise<void> {
     await this.client.request("DELETE", `/v1/downloads/${encodeURIComponent(id)}`);
+  }
+
+  /**
+   * POST /v1/downloads/{id}/redeliver — retry the upload of a job that failed at delivery,
+   * from the held copy. Omit `destination` to reuse the original target. Nothing is
+   * downloaded or charged again. Throws {@link ConflictError} (`not_redeliverable`) when the
+   * job did not fail at delivery or the hold has expired.
+   */
+  async redeliver(id: string, destination?: DestinationInput): Promise<DownloadJob> {
+    const json = destination ? { destination: normalizeDestination(destination) } : {};
+    const data = await this.client.request<Download>(
+      "POST", `/v1/downloads/${encodeURIComponent(id)}/redeliver`, { json });
+    return new DownloadJob(this.client, data);
   }
 
   /** L3 convenience: create + wait for the terminal state. */

@@ -35,7 +35,7 @@ TIMESTAMP_HEADER = "X-VideoFetch-Timestamp"
 # Full event set (server contract: schemas.WEBHOOK_EVENTS).
 WEBHOOK_EVENTS = (
     "download.queued", "download.processing", "download.completed", "download.failed",
-    "quota.warning", "quota.exceeded", "balance.low",
+    "quota.warning", "quota.exceeded", "balance.low", "storage.connection_failed",
 )
 
 

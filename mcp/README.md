@@ -38,6 +38,8 @@ No `uv`? `pipx install videofetch-mcp` and use `"command": "videofetch-mcp", "ar
 | `list_downloads` | Browse the account's jobs, filtered by status or keyword. |
 | `cancel_download` | Cancel a running job or delete a finished one. Idempotent, never charged. |
 | `account_usage` | Plan, month-to-date usage, remaining quota, PAYG balance, concurrency limits. |
+| `list_storage` | Connected buckets (S3 / R2 / GCS / S3-compatible): `st_…` id, default, health. Read-only. |
+| `redeliver_download` | After a failed upload to the user's bucket, push the held copy again — no re-download, no extra charge. |
 
 ## Design notes (why it behaves the way it does)
 
@@ -52,7 +54,11 @@ Built for models, not for humans, which changes a few defaults:
   actionable sentence (`quota_exceeded … top up or upgrade, then retry`) so the agent self-corrects
   instead of hallucinating.
 - **Safe by default.** `save_to` may only write inside `VIDEOFETCH_MCP_OUTPUT_DIR`, and the server
-  never accepts storage credentials — connect buckets in the dashboard and pass `destination_id`.
+  never accepts storage credentials — connect buckets in the dashboard and pass their `st_…` id as
+  `destination_id` (or omit it to use the account's default storage).
+- **Delivery failures are recoverable.** If the file downloaded but the bucket rejected it, the
+  result carries the storage error code and a `hint`, the file is held for 24h, and
+  `redeliver_download` finishes the job once the user has fixed the bucket.
 
 ## Configuration
 

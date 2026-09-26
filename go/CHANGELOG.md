@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.0 — 2026-09-26
+
+Added
+- **`client.Storage`** — `List`, `Retrieve`, `Create`, `Update`, `Delete(ctx, id, force)`,
+  `Test` (unsaved credentials) and `TestSaved(ctx, id)`. Connections have a public `st_…` id
+  and health fields (`Status`, `LastError`, `LastUsedAt`, `DeliveriesCount`).
+- `videofetch.StorageID("st_…")` and `videofetch.PlatformURL()` destination helpers;
+  `DestinationSpec` gained `Key` (per-job object key), `Save` and `Name`. A nil `Destination`
+  now uses the account's default connection.
+- `Download.Delivery` (`*Delivery`), `Download.Error` (`*DownloadError`) and
+  `Download.DestinationID`; the same on `WebhookPayload` plus `StorageKey`.
+- `Downloads.Redeliver(ctx, id, dest)` — retry the upload from the held copy without
+  re-downloading or re-charging.
+- Errors: `*StorageError` (422 `storage_*`), `*ConflictError` (409), `APIError.Hint`;
+  `*JobFailedError` gained `Stage`, `Retryable`, `Hint`, `ProviderCode`, `Download`,
+  `Redeliverable()` and wraps `ErrDeliveryFailed` for delivery-stage failures.
+- `EventStorageConnectionFailed` in `WebhookEvents`.
+
+Changed
+- Inline credentials are used for that job only unless `Save: true` (they used to be stored
+  as a connection automatically).
+
 ## 0.4.0 — 2026-09-24
 
 Added

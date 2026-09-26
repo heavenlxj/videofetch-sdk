@@ -16,10 +16,10 @@ function jsonResponse(status: number, body: unknown): Response {
 const FULL_SECRET = "whsec_0123456789abcdef0123456789abcdef0123456789abcdef";
 
 describe("webhooks resource", () => {
-  it("exposes the full download.*/quota.*/balance.low event catalogue", () => {
+  it("exposes the full download.*/quota.*/balance.low/storage.* event catalogue", () => {
     expect(WEBHOOK_EVENTS).toEqual([
       "download.queued", "download.processing", "download.completed", "download.failed",
-      "quota.warning", "quota.exceeded", "balance.low",
+      "quota.warning", "quota.exceeded", "balance.low", "storage.connection_failed",
     ]);
   });
 

@@ -20,7 +20,7 @@ const job = await client.downloads.create({
   url: "https://www.youtube.com/watch?v=...",
   format: "1080p",                       // 144p..2160p | mp3
   trim: { start: 120, end: 420 },        // optional clip window
-  // destination: { id: "conn_9f1c2a34" },  // optional direct-to-bucket (see below)
+  // destination: "st_9f1c2a34b5d6e7f8",   // optional: your own bucket (see below)
 });
 
 // L2: wait for the terminal state (polls with backoff)
@@ -67,37 +67,62 @@ export async function POST(request: Request) {
 
 ## Storage destinations
 
-By default the platform keeps the finished file and returns a presigned `download_url`
-(valid 7 days). Pass `destination` to have it written straight into your own bucket
-instead — the job then reports `storage_key` as `user://<bucket>/<key>` and
-`download_url` is null. Billing is identical either way, and failed or cancelled jobs are
-never charged.
+Connect a bucket once and reference it by its storage id (`st_…`) from every job — the
+provider, bucket, region and credentials stay on the server. Billing is identical to
+platform delivery, and failed or cancelled jobs are never charged.
 
 ```ts
-// A saved connection. Connect the bucket once (Dashboard → Storage, or POST /v1/storage)
-// and reuse the id: the provider, bucket and credentials all come from the connection,
-// so you never have to know — or repeat — the provider.
-await client.downloads.create({
-  url, format: "1080p",
-  destination: { id: "conn_9f1c2a34" },
-});
+// 1. Connect once (or Dashboard → Storage). test() probes connect → write → cleanup.
+const creds = { provider: "s3", bucket: "my-bucket", region: "us-east-1",
+                access_key_id: "AKIA...", secret_access_key: "..." } as const;
+const check = await client.storage.test(creds);
+if (!check.ok) throw new Error(`${check.code}: ${check.message} — ${check.hint}`);
+const conn = await client.storage.create({ ...creds, is_default: true });
+console.log(conn.id);                              // st_9f1c2a34b5d6e7f8
 
-// Inline credentials. These are stored as a connection for your account and reused by
-// later jobs. `type` is required in this form — the SavedDestination vs InlineDestination
-// union enforces it, because without a concrete provider the server falls back to "url"
-// and would ignore the bucket.
-await client.downloads.create({
-  url, format: "1080p",
-  destination: {
-    type: "s3",                 // s3 | r2 | gcs | s3_compatible
-    bucket: "my-bucket",
-    region: "us-east-1",
-    access_key_id: "...",
-    secret_access_key: "...",
-    path: "videos/",            // optional; key prefix of the new connection (default youtube/{video_id}/)
-  },
-});
+// 2. Reference it. The result says exactly where the file landed.
+const done = await (await client.downloads.create({ url, destination: conn.id })).wait();
+console.log(done.delivery?.uri);                   // s3://my-bucket/youtube/<video_id>/video.mp4
 ```
+
+| `destination` | where the file goes |
+|---|---|
+| omitted | the account's default connection, else the platform (`download_url`, 7 days) |
+| `"st_…"` | that saved connection |
+| `{ id: "st_…", path: "clips/{video_id}/" }` or `{ id, key: "a/{video_id}.{ext}" }` | saved connection, object key overridden for this job only |
+| `"url"` | the platform, even when a default connection is set |
+| `{ type: "s3", bucket, access_key_id, secret_access_key }` | inline credentials for **this job only**; add `save: true, name` to keep them |
+
+Path variables: `{video_id}`, `{job_id}`, `{format}`, `{date}` (`key` also accepts `{ext}`).
+
+### When delivery fails
+
+A bad destination is rejected up front with `StorageError` (422 — `storage_not_found`,
+`storage_config_invalid`, `storage_endpoint_blocked`, `storage_unreachable`); `param` names
+the field and `hint` says how to fix it. An upload that fails after the download makes
+`job.wait()` throw `DeliveryFailedError`. The file is held for 24 hours, so fix the bucket
+and redeliver — nothing is downloaded or charged again:
+
+```ts
+import { DeliveryFailedError } from "@videofetch/sdk";
+
+try {
+  await (await client.downloads.create({ url, destination: "st_..." })).wait();
+} catch (e) {
+  if (e instanceof DeliveryFailedError && e.redeliverable) {   // held until e.holdExpiresAt
+    console.warn(e.code, e.providerCode, e.hint);            // storage_permission_denied AccessDenied …
+    await (await client.downloads.redeliver(e.jobId)).wait();
+    // or elsewhere: client.downloads.redeliver(e.jobId, "st_other")
+  } else throw e;
+}
+```
+
+Delivery error codes: `storage_unreachable`, `storage_auth_failed`,
+`storage_permission_denied`, `storage_bucket_not_found`, `storage_region_mismatch`,
+`storage_rate_limited`, `storage_quota_exceeded`, `storage_upload_failed`,
+`storage_not_found`. `e.retryable` is true for transient ones (uploads are already retried
+3 times). A permanent failure marks the connection `status: "failing"` and sends the
+`storage.connection_failed` webhook once.
 
 ## Configuration
 
@@ -114,9 +139,12 @@ new VideoFetch({
 
 - `QuotaExceededError` — 402 monthly quota exhausted
 - `ValidationError` — 400/422 bad url/format/trim/destination
+- `StorageError` — 422 `storage_*`, destination rejected; has `param` and `hint`
 - `NotFoundError` — 404
+- `ConflictError` — 409 `storage_in_use` (delete with `{ force: true }`) / `not_redeliverable`
 - `RateLimitError` — 429
-- `JobFailedError` — job reached `failed` (**never charged**)
+- `JobFailedError` — job reached `failed` (**never charged**); `stage`, `retryable`, `hint`
+- `DeliveryFailedError` — `JobFailedError` at the delivery stage; `redeliverable`, `holdExpiresAt`
 
 ## Serverless warning
 

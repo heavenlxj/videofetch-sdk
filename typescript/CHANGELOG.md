@@ -3,6 +3,30 @@
 All notable changes to `@videofetch/sdk` are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] — 2026-09-26
+
+### Added
+
+- **`client.storage`** — `list()`, `retrieve(id)`, `create(params)`, `update(id, params)`,
+  `delete(id, { force })` and `test("st_…" | params)`. Connections have a public `st_…` id and
+  health fields (`status`, `last_error`, `last_used_at`, `deliveries_count`). Works with an API key.
+- **`destination` shorthands** (`DestinationInput`): `"st_…"`, `"url"`, `{ id, path | key }` for a
+  per-job object key, and inline credentials with `save` / `name`. Omitting `destination` now
+  uses the account's default connection.
+- **`Download.delivery`** (`Delivery`), **`Download.error`** (`DownloadErrorInfo`) and
+  `Download.destination_id`; the same fields on `WebhookPayload`.
+- **`client.downloads.redeliver(id, destination?)`** — retry the upload from the held copy
+  without re-downloading or re-charging.
+- Errors: `StorageError` (422 `storage_*`, `hint`), `ConflictError` (409),
+  `DeliveryFailedError` (delivery-stage `JobFailedError`, `redeliverable`, `holdExpiresAt`).
+  `JobFailedError` gained `stage`, `retryable`, `hint`, `providerCode`, `download`.
+- `WEBHOOK_EVENTS` includes `storage.connection_failed`.
+
+### Changed
+
+- Inline credentials are used for that job only unless `save: true` (they used to be stored as
+  a connection automatically).
+
 ## [0.4.0] — 2026-09-24
 
 ### Added

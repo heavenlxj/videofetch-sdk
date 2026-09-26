@@ -19,13 +19,23 @@ DOWNLOAD_URL = "https://cdn.vf.test/art/dl_test01.mp3"
 class FakeAPI:
     def __init__(self, *, complete_after: int = 1, fail_jobs: bool = False,
                  no_download_url: bool = False, with_destination: bool = False,
-                 advance: bool = True):
+                 advance: bool = True, delivery_fails: bool = False):
         # advance=False: GET 只观察不推进 (真 API 里状态靠 worker 推进, 读取不该有副作用)
         self.advance = advance
         self.complete_after = complete_after      # 第 N 次 GET 后变终态
         self.fail_jobs = fail_jobs
         self.no_download_url = no_download_url
         self.with_destination = with_destination
+        self.delivery_fails = delivery_fails      # 首轮投递失败 (保留文件), redeliver 后成功
+        self.storage = [
+            {"id": "st_default0000001", "name": "Prod R2", "provider": "r2", "bucket": "my-bucket",
+             "path_prefix": "youtube/{video_id}/", "is_default": True, "status": "active",
+             "deliveries_count": 12, "created_at": "2026-09-01T00:00:00"},
+            {"id": "st_failing0000002", "name": "Old S3", "provider": "s3", "bucket": "old",
+             "path_prefix": "youtube/", "is_default": False, "status": "failing", "deliveries_count": 0,
+             "last_error": {"code": "storage_permission_denied", "message": "Access denied"},
+             "created_at": "2026-09-01T00:00:00"},
+        ]
         self.jobs: dict[str, dict] = {}
         self.polls: dict[str, int] = {}
         self.requests: list[tuple[str, str, Optional[dict]]] = []
@@ -97,6 +107,21 @@ class FakeAPI:
             }
             return httpx.Response(202, json=self.jobs[jid])
 
+        if method == "GET" and path == "/v1/storage":
+            return httpx.Response(200, json={"items": self.storage})
+
+        if method == "POST" and path.startswith("/v1/downloads/") and path.endswith("/redeliver"):
+            jid = path.split("/")[3]
+            job = self.jobs.get(jid)
+            if job is None or not (job.get("delivery") or {}).get("redeliverable"):
+                return httpx.Response(409, json={"detail": {"code": "not_redeliverable",
+                                                            "message": "Nothing to redeliver."}})
+            self.delivery_fails = False
+            job.update(status="queued", error_code=None, error_message=None, error=None,
+                       delivery=None, redelivered_to=(body or {}).get("destination"))
+            self.polls[jid] = 0
+            return httpx.Response(202, json=job)
+
         if method == "GET" and path.startswith("/v1/downloads/"):
             jid = path.rsplit("/", 1)[-1]
             job = self.jobs.get(jid)
@@ -141,13 +166,28 @@ class FakeAPI:
             job.update(status="failed", error_code="download_failed", progress=100,
                        error_message="YouTube video is private or unavailable.")
             return job
+        if self.delivery_fails:
+            job.update(status="failed", progress=100, error_code="storage_permission_denied",
+                       error_message="The credentials cannot write to this bucket.",
+                       error={"code": "storage_permission_denied", "stage": "delivery",
+                              "retryable": False, "provider_code": "AccessDenied",
+                              "hint": "Grant s3:PutObject on the bucket/prefix."},
+                       delivery={"type": "storage", "status": "failed",
+                                 "destination_id": "st_default0000001", "provider": "r2",
+                                 "bucket": "my-bucket", "redeliverable": True,
+                                 "hold_expires_at": "2026-09-25T12:00:00"})
+            return job
         job.update(status="completed", progress=100, size_bytes=481213,
                    cost_usd=0.006836, attempts=1, strategy="decodo_isp",
                    completed_at="2026-09-24T12:00:18",
                    processing_time_ms=18000)
-        if self.with_destination:
-            job.update(destination_type="r2",
-                       storage_key="user://my-bucket/youtube/aqz-KE-bpKQ/dl_test.mp3")
+        if self.with_destination or "redelivered_to" in job:
+            key = "youtube/aqz-KE-bpKQ/dl_test.mp3"
+            job.update(destination_type="r2", destination_id="st_default0000001",
+                       storage_key=f"user://my-bucket/{key}",
+                       delivery={"type": "storage", "status": "delivered",
+                                 "destination_id": "st_default0000001", "provider": "r2",
+                                 "bucket": "my-bucket", "key": key, "uri": f"r2://my-bucket/{key}"})
         elif not self.no_download_url:
             job.update(destination_type="url", download_url=DOWNLOAD_URL,
                        download_url_expires_at="2026-10-01T12:00:00")

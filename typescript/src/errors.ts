@@ -1,5 +1,7 @@
 /** Error hierarchy mirroring the server error contract. */
 
+import type { Download } from "./types";
+
 export class VideoFetchError extends Error {
   code?: string | null;
   statusCode?: number | null;
@@ -23,6 +25,19 @@ export class PermissionDeniedError extends VideoFetchError { name = "PermissionD
 export class ValidationError extends VideoFetchError { name = "ValidationError"; }
 export class NotFoundError extends VideoFetchError { name = "NotFoundError"; }
 export class ApiError extends VideoFetchError { name = "ApiError"; }
+
+/**
+ * 422 — a storage destination was rejected when the job was created.
+ * code ∈ storage_not_found | storage_config_invalid | storage_endpoint_blocked | storage_unreachable.
+ * `param` names the field (e.g. `destination.endpoint`); `hint` says how to fix it.
+ */
+export class StorageError extends ValidationError {
+  name = "StorageError";
+  hint: string | null = null;
+}
+
+/** 409 — code ∈ storage_in_use (delete with `{ force: true }`) | not_redeliverable. */
+export class ConflictError extends VideoFetchError { name = "ConflictError"; }
 
 /**
  * 429 — the request was throttled. Typically an account concurrency guard:
@@ -51,24 +66,59 @@ export class QuotaExceededError extends VideoFetchError {
   remainingGb: number | null = null;
 }
 
-/** The download job reached a terminal failed state. Failed jobs are never charged. */
+/**
+ * The download job reached a terminal failed state. Failed jobs are never charged.
+ * `stage` / `retryable` / `hint` / `providerCode` come from `Download.error`.
+ */
 export class JobFailedError extends VideoFetchError {
   jobId: string;
   failedNotCharged = true;
+  download: Download | null;
+  stage: string | null;
+  retryable: boolean | null;
+  hint: string | null;
+  providerCode: string | null;
 
-  constructor(jobId: string, errorCode?: string | null, errorMessage?: string | null) {
+  constructor(jobId: string, errorCode?: string | null, errorMessage?: string | null, download?: Download | null) {
     super(
       `Download job ${jobId} failed` + (errorCode || errorMessage ? ` [${errorCode ?? ""}]: ${errorMessage ?? ""}` : ""),
       { code: errorCode ?? "job_failed" },
     );
     this.name = "JobFailedError";
     this.jobId = jobId;
+    this.download = download ?? null;
+    const err = download?.error;
+    this.stage = err?.stage ?? null;
+    this.retryable = err?.retryable ?? null;
+    this.hint = err?.hint ?? null;
+    this.providerCode = err?.provider_code ?? null;
   }
+}
+
+/**
+ * The file was downloaded but could not be written to your storage (`stage: "delivery"`).
+ * When `redeliverable` is true the file is held until `holdExpiresAt`: fix the bucket and call
+ * `client.downloads.redeliver(jobId)` — nothing is downloaded or charged again.
+ */
+export class DeliveryFailedError extends JobFailedError {
+  get redeliverable(): boolean { return !!this.download?.delivery?.redeliverable; }
+  get holdExpiresAt(): string | null { return this.download?.delivery?.hold_expires_at ?? null; }
+
+  constructor(jobId: string, errorCode?: string | null, errorMessage?: string | null, download?: Download | null) {
+    super(jobId, errorCode, errorMessage, download);
+    this.name = "DeliveryFailedError";
+  }
+}
+
+/** The right {@link JobFailedError} subclass for a failed download. */
+export function jobFailedError(dl: Download): JobFailedError {
+  const Cls = dl.error?.stage === "delivery" ? DeliveryFailedError : JobFailedError;
+  return new Cls(dl.id, dl.error_code ?? null, dl.error_message ?? null, dl);
 }
 
 interface ErrorDetail {
   code?: string; message?: string; msg?: string; param?: string; type?: string;
-  remaining_gb?: number; limit?: number; active?: number; scope?: string;
+  remaining_gb?: number; limit?: number; active?: number; scope?: string; hint?: string;
 }
 
 function numHeader(headers: Headers | null | undefined, name: string): number | null {
@@ -118,10 +168,18 @@ export function mapError(
       return err;
     }
     case 400:
-    case 422:
+    case 422: {
+      if (code?.startsWith("storage_")) {
+        const err = new StorageError(message, base);
+        err.hint = detailObj?.hint ?? null;
+        return err;
+      }
       return new ValidationError(message, base);
+    }
     case 404:
       return new NotFoundError(message, base);
+    case 409:
+      return new ConflictError(message, base);
     case 429: {
       const err = new RateLimitError(message, base);
       err.limit = detailObj?.limit ?? numHeader(headers, "X-Concurrency-Limit");

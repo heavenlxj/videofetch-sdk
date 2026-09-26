@@ -3,6 +3,7 @@
 export type DownloadFormat = "144p" | "240p" | "360p" | "480p" | "720p" | "1080p" | "1440p" | "2160p" | "mp3";
 export type DownloadStatus = "queued" | "processing" | "completed" | "failed" | "deleted";
 export type DestinationType = "url" | "s3" | "r2" | "gcs" | "s3_compatible";
+export type StorageProvider = Exclude<DestinationType, "url">;
 export type DownloadStrategy = "direct" | "relay" | "relay_secondary";
 
 export interface TrimSpec {
@@ -47,6 +48,12 @@ export interface Download {
   size_bytes?: number | null;
   trim?: TrimSpec | null;
   destination_type?: DestinationType | null;
+  /** st_… saved connection this job delivers to (null for platform / one-off inline credentials) */
+  destination_id?: string | null;
+  /** where the file went — see {@link Delivery} */
+  delivery?: Delivery | null;
+  /** structured failure reason when status=failed */
+  error?: DownloadErrorInfo | null;
   /** presigned 7-day link (url destination only) */
   download_url?: string | null;
   download_url_expires_at?: string | null;
@@ -64,14 +71,53 @@ export interface Download {
   attempt_details?: DownloadAttempt[];
 }
 
+/**
+ * Where the finished file went.
+ * `type: "url"` — the platform keeps it and `download_url` is set.
+ * `type: "storage"` — written to your bucket (`uri` / `bucket` / `key`).
+ * `status: "failed"` with `redeliverable: true` — the file is held until `hold_expires_at`;
+ * `client.downloads.redeliver(id)` retries without re-downloading.
+ */
+export interface Delivery {
+  type: "url" | "storage";
+  status: "pending" | "delivered" | "failed";
+  destination_id?: string | null;
+  /** inline credentials used for this job only */
+  ephemeral?: boolean;
+  provider?: string | null;
+  bucket?: string | null;
+  key?: string | null;
+  /** s3:// · gs:// · r2:// */
+  uri?: string | null;
+  etag?: string | null;
+  size_bytes?: number | null;
+  /** upload attempts in the last delivery run */
+  attempts?: number | null;
+  delivered_at?: string | null;
+  redeliverable?: boolean;
+  hold_expires_at?: string | null;
+}
+
+/** Structured failure reason (`Download.error`). */
+export interface DownloadErrorInfo {
+  code: string;
+  message?: string | null;
+  /** fetch | process | billing | delivery */
+  stage?: "fetch" | "process" | "billing" | "delivery" | null;
+  retryable?: boolean | null;
+  /** raw storage provider error, e.g. `AccessDenied` */
+  provider_code?: string | null;
+  hint?: string | null;
+}
+
 export interface DownloadCreateParams {
   url: string;
   format?: DownloadFormat;
   /** optional clip window in seconds */
   trim?: TrimSpec;
-  /** where the finished file should land — see {@link DestinationSpec}. Omit to let the
-   *  platform keep the file and return a presigned `download_url`. */
-  destination?: DestinationSpec;
+  /** where the finished file should land — see {@link DestinationInput}. Omit to use the
+   *  account's default storage connection (or the platform when none is set). */
+  destination?: DestinationInput;
   /** receive download.* events for this job */
   webhook_url?: string;
 }
@@ -84,29 +130,45 @@ export interface PlatformDestination {
 
 /** A saved storage connection. Only `id` is required — the server reads the provider,
  *  bucket and credentials from the connection itself, so you do not need to know (or
- *  repeat) the provider here. Every other field is ignored. */
+ *  repeat) the provider here. */
 export interface SavedDestination {
-  /** connection id, from `POST /v1/storage` or the Dashboard → Storage page */
+  /** `st_…` id, from `client.storage.create()` or the Dashboard → Storage page */
   id: string;
   /** optional, and ignored when `id` is given; kept for backwards compatibility */
   type?: DestinationType;
+  /** object key prefix for this job only, e.g. `clips/{video_id}/` */
+  path?: string;
+  /** full object key for this job only, e.g. `clips/{video_id}.{ext}` */
+  key?: string;
 }
 
-/** Inline credentials. `type` is required here: without a concrete provider the server
- *  would fall back to `"url"` and silently ignore the bucket. */
+/** Inline credentials, used for this job only unless `save: true`. `type` is required:
+ *  without a concrete provider the server would fall back to `"url"`. */
 export interface InlineDestination {
-  type: Exclude<DestinationType, "url">;
+  type: StorageProvider;
   bucket: string;
   access_key_id: string;
   secret_access_key: string;
+  /** required for r2 and s3_compatible */
   endpoint?: string;
   region?: string;
-  /** object key prefix for the connection created from these credentials;
-   *  defaults to `youtube/{video_id}/` */
+  /** object key prefix; defaults to `youtube/{video_id}/` */
   path?: string;
+  /** full object key template (overrides `path`); also accepts `{ext}` */
+  key?: string;
+  /** keep these credentials as a saved connection (reused if an identical one exists) */
+  save?: boolean;
+  /** name of the saved connection when `save` is true */
+  name?: string;
 }
 
 export type DestinationSpec = PlatformDestination | SavedDestination | InlineDestination;
+
+/** `"st_…"` (saved connection) or `"url"` (force platform delivery). */
+export type DestinationShorthand = "url" | `st_${string}` | (string & {});
+
+/** Everything `destination` accepts on create / redeliver. */
+export type DestinationInput = DestinationShorthand | DestinationSpec;
 
 export interface DownloadList {
   items: Download[];
@@ -141,7 +203,8 @@ export type WebhookEvent =
   | "download.failed"
   | "quota.warning"
   | "quota.exceeded"
-  | "balance.low";
+  | "balance.low"
+  | "storage.connection_failed";
 
 /** All events the account-level webhook endpoints can subscribe to. */
 export const WEBHOOK_EVENTS: WebhookEvent[] = [
@@ -152,6 +215,7 @@ export const WEBHOOK_EVENTS: WebhookEvent[] = [
   "quota.warning",
   "quota.exceeded",
   "balance.low",
+  "storage.connection_failed",
 ];
 
 /** A registered account-level webhook endpoint (GET/POST /v1/webhooks). */
@@ -238,6 +302,10 @@ export interface WebhookPayload {
   duration?: number | null;
   download_url?: string | null;
   destination?: string;
+  destination_id?: string | null;
+  storage_key?: string | null;
+  delivery?: Delivery | null;
+  error?: DownloadErrorInfo | null;
   cost_usd?: number;
   created_at?: string | null;
   completed_at?: string | null;
@@ -336,4 +404,74 @@ export interface UsageAlerts {
   thresholds: number[];
   /** top-up presets in USD, e.g. [10, 25, 50, 100] */
   topup_amounts: number[];
+}
+
+// ────────────────────────── Storage connections (v0.5.0) ─────────────────────
+
+/** A saved storage connection (GET /v1/storage). Pass `id` as `destination`. */
+export interface StorageConnection {
+  /** `st_…` */
+  id: string;
+  name: string;
+  provider: StorageProvider;
+  bucket: string;
+  path_prefix: string;
+  endpoint?: string | null;
+  region?: string | null;
+  /** e.g. `AKIA••••MPLE` — the secret is never returned */
+  access_key_masked?: string | null;
+  is_default: boolean;
+  /** `failing` after a permanent delivery error; reset by a successful delivery/test */
+  status: "active" | "failing";
+  last_error?: { code: string; message?: string | null; at?: string | null } | null;
+  last_used_at?: string | null;
+  deliveries_count: number;
+  last_tested_at?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface StorageConnectionList {
+  items: StorageConnection[];
+}
+
+export interface StorageCreateParams {
+  provider: StorageProvider;
+  bucket: string;
+  access_key_id: string;
+  secret_access_key: string;
+  name?: string;
+  /** required for r2 and s3_compatible */
+  endpoint?: string;
+  region?: string;
+  /** default `youtube/{video_id}/` */
+  path_prefix?: string;
+  /** jobs without a destination go here */
+  is_default?: boolean;
+}
+
+/** Passing both keys rotates credentials and resets `status`. */
+export type StorageUpdateParams = Partial<Omit<StorageCreateParams, "provider" | "bucket">>;
+
+export type StorageTestParams = Omit<StorageCreateParams, "name" | "is_default">;
+
+export interface StorageTestStep {
+  name: "connect" | "write" | "cleanup";
+  ok: boolean;
+  /** cleanup failures are warnings: delivery only needs PutObject */
+  warning?: boolean;
+  code?: string | null;
+  message?: string | null;
+}
+
+/** POST /v1/storage/test — a failed probe is `ok: false`, not a thrown error. */
+export interface StorageTestResult {
+  ok: boolean;
+  /** `storage_*` when ok is false */
+  code?: string | null;
+  message: string;
+  hint?: string | null;
+  provider_code?: string | null;
+  probe_key?: string | null;
+  steps: StorageTestStep[];
 }

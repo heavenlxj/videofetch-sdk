@@ -66,6 +66,69 @@ class DownloadAttempt:
 
 
 @dataclass
+class Delivery:
+    """Where the finished file went (``Download.delivery``).
+
+    ``type="url"``: the platform keeps it and ``Download.download_url`` is set.
+    ``type="storage"``: it was written to your bucket — ``uri`` / ``bucket`` / ``key``.
+    ``status="failed"`` with ``redeliverable=True`` means the file is held until
+    ``hold_expires_at`` and ``client.downloads.redeliver(id)`` can retry without re-downloading.
+    """
+    type: str = "url"                          # url | storage
+    status: str = "pending"                    # pending | delivered | failed
+    destination_id: Optional[str] = None       # st_… (None for platform / one-off inline credentials)
+    ephemeral: bool = False
+    provider: Optional[str] = None
+    bucket: Optional[str] = None
+    key: Optional[str] = None
+    uri: Optional[str] = None                  # s3:// · gs:// · r2://
+    etag: Optional[str] = None
+    size_bytes: Optional[int] = None
+    attempts: Optional[int] = None
+    delivered_at: Optional[str] = None
+    redeliverable: bool = False
+    hold_expires_at: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, d: Optional[dict]) -> Optional["Delivery"]:
+        if not d:
+            return None
+        return cls(
+            type=d.get("type", "url"), status=d.get("status", "pending"),
+            destination_id=d.get("destination_id"), ephemeral=bool(d.get("ephemeral")),
+            provider=d.get("provider"), bucket=d.get("bucket"), key=d.get("key"), uri=d.get("uri"),
+            etag=d.get("etag"), size_bytes=_as_int(d.get("size_bytes")), attempts=_as_int(d.get("attempts")),
+            delivered_at=_as_str(d.get("delivered_at")), redeliverable=bool(d.get("redeliverable")),
+            hold_expires_at=_as_str(d.get("hold_expires_at")),
+        )
+
+
+@dataclass
+class DownloadError:
+    """Structured failure reason (``Download.error``).
+
+    ``stage`` is fetch | process | billing | delivery. ``retryable`` says whether resubmitting
+    (or redelivering) unchanged can succeed; ``provider_code`` is the raw storage error such as
+    ``AccessDenied``.
+    """
+    code: str = ""
+    message: Optional[str] = None
+    stage: Optional[str] = None
+    retryable: Optional[bool] = None
+    provider_code: Optional[str] = None
+    hint: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, d: Optional[dict]) -> Optional["DownloadError"]:
+        if not d:
+            return None
+        r = d.get("retryable")
+        return cls(code=d.get("code", ""), message=d.get("message"), stage=d.get("stage"),
+                   retryable=None if r is None else bool(r), provider_code=d.get("provider_code"),
+                   hint=d.get("hint"))
+
+
+@dataclass
 class Download:
     """A download job (dl_xxx). Mirrors GET /v1/downloads/{id}."""
     id: str
@@ -82,6 +145,9 @@ class Download:
     size_bytes: Optional[int] = None
     trim: Optional[TrimSpec] = None
     destination_type: Optional[str] = None     # url|s3|r2|gcs|s3_compatible
+    destination_id: Optional[str] = None       # st_… saved connection used by this job
+    delivery: Optional[Delivery] = None
+    error: Optional[DownloadError] = None
     download_url: Optional[str] = None         # presigned link (url destination only)
     download_url_expires_at: Optional[str] = None
     storage_key: Optional[str] = None          # user://<bucket>/<key> when destination used
@@ -118,7 +184,9 @@ class Download:
             duration_seconds=_as_float(d.get("duration_seconds")),
             size_bytes=_as_int(d.get("size_bytes")),
             trim=TrimSpec.from_dict(d.get("trim")),
-            destination_type=d.get("destination_type"), download_url=d.get("download_url"),
+            destination_type=d.get("destination_type"), destination_id=d.get("destination_id"),
+            delivery=Delivery.from_dict(d.get("delivery")), error=DownloadError.from_dict(d.get("error")),
+            download_url=d.get("download_url"),
             download_url_expires_at=d.get("download_url_expires_at"),
             storage_key=d.get("storage_key"),
             processing_time_ms=_as_int(d.get("processing_time_ms")),
@@ -132,6 +200,75 @@ class Download:
             queue_position=_as_int(d.get("queue_position")),
             ahead_of_you=_as_int(d.get("ahead_of_you")),
             estimated_wait_seconds=_as_int(d.get("estimated_wait_seconds")),
+        )
+
+
+@dataclass
+class StorageConnection:
+    """A saved storage connection (GET /v1/storage). Pass ``id`` (st_…) as ``destination``."""
+    id: str = ""
+    name: str = ""
+    provider: str = ""                         # s3 | r2 | gcs | s3_compatible
+    bucket: str = ""
+    path_prefix: str = ""
+    endpoint: Optional[str] = None
+    region: Optional[str] = None
+    access_key_masked: Optional[str] = None
+    is_default: bool = False
+    status: str = "active"                     # active | failing
+    last_error_code: Optional[str] = None
+    last_error_message: Optional[str] = None
+    last_error_at: Optional[str] = None
+    last_used_at: Optional[str] = None
+    deliveries_count: int = 0
+    last_tested_at: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "StorageConnection":
+        err = d.get("last_error") or {}
+        return cls(
+            id=str(d.get("id", "")), name=d.get("name", ""), provider=d.get("provider", ""),
+            bucket=d.get("bucket", ""), path_prefix=d.get("path_prefix", ""),
+            endpoint=d.get("endpoint"), region=d.get("region"),
+            access_key_masked=d.get("access_key_masked"), is_default=bool(d.get("is_default")),
+            status=d.get("status", "active"), last_error_code=err.get("code"),
+            last_error_message=err.get("message"), last_error_at=_as_str(err.get("at")),
+            last_used_at=_as_str(d.get("last_used_at")), deliveries_count=int(d.get("deliveries_count") or 0),
+            last_tested_at=_as_str(d.get("last_tested_at")), created_at=_as_str(d.get("created_at")),
+            updated_at=_as_str(d.get("updated_at")),
+        )
+
+
+@dataclass
+class StorageTestStep:
+    name: str = ""                             # connect | write | cleanup
+    ok: bool = False
+    warning: bool = False
+    code: Optional[str] = None
+    message: Optional[str] = None
+
+
+@dataclass
+class StorageTestResult:
+    """POST /v1/storage/test — a failed probe is ``ok=False`` (not an exception)."""
+    ok: bool = False
+    code: Optional[str] = None                 # storage_* when ok is False
+    message: str = ""
+    hint: Optional[str] = None
+    provider_code: Optional[str] = None
+    probe_key: Optional[str] = None
+    steps: list[StorageTestStep] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "StorageTestResult":
+        return cls(
+            ok=bool(d.get("ok")), code=d.get("code"), message=d.get("message", ""), hint=d.get("hint"),
+            provider_code=d.get("provider_code"), probe_key=d.get("probe_key"),
+            steps=[StorageTestStep(name=s.get("name", ""), ok=bool(s.get("ok")), warning=bool(s.get("warning")),
+                                   code=s.get("code"), message=s.get("message"))
+                   for s in (d.get("steps") or [])],
         )
 
 

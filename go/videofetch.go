@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -43,6 +44,7 @@ type Client struct {
 	Info      *InfoService
 	Usage     *UsageService
 	Webhooks  *WebhooksService
+	Storage   *StorageService
 }
 
 // ClientOptions tune the client. Zero values fall back to defaults.
@@ -89,6 +91,7 @@ func NewClient(apiKey string, opts *ClientOptions) *Client {
 	c.Info = &InfoService{client: c}
 	c.Usage = &UsageService{client: c}
 	c.Webhooks = &WebhooksService{client: c}
+	c.Storage = &StorageService{client: c}
 	return c
 }
 
@@ -98,6 +101,7 @@ type APIError struct {
 	Code       string `json:"code"`
 	Message    string `json:"message"`
 	Param      string `json:"param"`
+	Hint       string `json:"hint"`
 	RawBody    string
 }
 
@@ -146,17 +150,59 @@ type QuotaExceededError struct {
 // Unwrap exposes the embedded *APIError so errors.As(err, &apiErr) works too.
 func (e *QuotaExceededError) Unwrap() error { return &e.APIError }
 
+// StorageError is returned for HTTP 422 when a storage destination is rejected at
+// create time. Code is one of "storage_not_found", "storage_config_invalid",
+// "storage_endpoint_blocked" or "storage_unreachable"; Param names the field
+// (e.g. "destination.endpoint") and Hint says how to fix it.
+type StorageError struct{ APIError }
+
+// Unwrap exposes the embedded *APIError so errors.As(err, &apiErr) works too.
+func (e *StorageError) Unwrap() error { return &e.APIError }
+
+// ConflictError is returned for HTTP 409. Code is "storage_in_use" (delete with
+// force) or "not_redeliverable".
+type ConflictError struct{ APIError }
+
+// Unwrap exposes the embedded *APIError so errors.As(err, &apiErr) works too.
+func (e *ConflictError) Unwrap() error { return &e.APIError }
+
+// ErrDeliveryFailed is wrapped by a *JobFailedError whose Stage is "delivery": the file
+// was downloaded but could not be written to your storage.
+var ErrDeliveryFailed = errors.New("videofetch: delivery to storage failed")
+
 // JobFailedError is returned by Wait when the job reached a failed terminal
 // state. Failed downloads are never charged.
+//
+// Stage is fetch | process | billing | delivery. For delivery failures ErrorCode is a
+// storage_* code, errors.Is(err, ErrDeliveryFailed) is true, and when Redeliverable()
+// the file is held so Downloads.Redeliver can retry without re-downloading.
 type JobFailedError struct {
 	JobID        string
 	ErrorCode    string
 	ErrorMessage string
+	Stage        string
+	Retryable    *bool
+	Hint         string
+	ProviderCode string
+	Download     *Download
 }
 
 func (e *JobFailedError) Error() string {
 	return fmt.Sprintf("videofetch: download job %s failed [%s]: %s",
 		e.JobID, e.ErrorCode, e.ErrorMessage)
+}
+
+// Unwrap exposes ErrDeliveryFailed for delivery-stage failures.
+func (e *JobFailedError) Unwrap() error {
+	if e.Stage == "delivery" {
+		return ErrDeliveryFailed
+	}
+	return nil
+}
+
+// Redeliverable reports whether the file is still held and Downloads.Redeliver can run.
+func (e *JobFailedError) Redeliverable() bool {
+	return e.Download != nil && e.Download.Delivery != nil && e.Download.Delivery.Redeliverable
 }
 
 // ErrJobNotCompleted is wrapped by *JobNotCompletedError so callers can match
@@ -203,7 +249,7 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 		}
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "videofetch-go/0.4.0")
+		req.Header.Set("User-Agent", "videofetch-go/0.5.0")
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
@@ -252,6 +298,7 @@ type errorDetail struct {
 	Limit       int      `json:"limit"`
 	Active      int      `json:"active"`
 	Scope       string   `json:"scope"`
+	Hint        string   `json:"hint"`
 }
 
 func mapError(status int, body []byte, hdr http.Header) error {
@@ -284,11 +331,18 @@ func mapError(status int, body []byte, hdr http.Header) error {
 		apiErr.Message = d.Msg
 	}
 	apiErr.Param = d.Param
+	apiErr.Hint = d.Hint
 	if apiErr.Message == "" {
 		apiErr.Message = fmt.Sprintf("unexpected HTTP %d", status)
 	}
 
 	switch status {
+	case http.StatusUnprocessableEntity, http.StatusBadRequest:
+		if strings.HasPrefix(apiErr.Code, "storage_") {
+			return &StorageError{APIError: *apiErr}
+		}
+	case http.StatusConflict:
+		return &ConflictError{APIError: *apiErr}
 	case http.StatusPaymentRequired:
 		return &QuotaExceededError{APIError: *apiErr, RemainingGB: d.RemainingGB}
 	case http.StatusForbidden:
