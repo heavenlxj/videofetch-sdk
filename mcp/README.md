@@ -3,7 +3,7 @@
 Give any AI agent the ability to download video/audio into your own object storage.
 
 `videofetch-mcp` is the official [Model Context Protocol](https://modelcontextprotocol.io) server for
-[VideoFetch](https://www.vidfetch.dev). It exposes six tools, so a chat assistant can go from
+[VideoFetch](https://www.vidfetch.dev). It exposes eight tools, so a chat assistant can go from
 *"grab this clip as MP3 and put it in my bucket"* to a delivered file — no HTTP client, no polling
 loop, no retry code.
 
@@ -74,12 +74,18 @@ Built for models, not for humans, which changes a few defaults:
 ## Verify
 
 ```bash
-$ VIDEOFETCH_API_KEY=vf_live_sk_your_key uvx videofetch-mcp --selftest
-server : videofetch 0.1.0
-tools  : 6
+$ VIDEOFETCH_API_KEY=vf_liv..._key uvx videofetch-mcp --selftest
+server : videofetch 0.2.0
+tools  : 8
   - video_info         Inspect a video (free)
   - download_media     Download video or audio
-  ...
+  - get_download       Get one download
+  - list_downloads     List downloads
+  - cancel_download    Cancel a download
+  - account_usage      Account usage & quota
+  - list_storage       List connected storage
+  - redeliver_download Retry delivery to storage
+base   : https://api.vidfetch.dev
 usage  : plan=developer used=0.0195GB remaining=99.98GB alert=ok
 
 SELFTEST OK
@@ -95,7 +101,7 @@ VIDEOFETCH_API_KEY=... videofetch-mcp --transport streamable-http --host 127.0.0
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                                   # 32 offline tests (fake API + MCP protocol layer)
+pytest -q                                   # 44 offline tests (fake API + MCP protocol layer)
 
 # opt-in live end-to-end (spends a few cents of real quota)
 VIDEOFETCH_LIVE_KEY=vf_live_sk_... pytest tests/test_live.py -q

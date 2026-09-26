@@ -76,7 +76,7 @@ jobs:
       # CI has no API key, and the selftest deliberately exits 2 rather than reporting a green
       # run for an unconfigured server. Assert that, plus the tool manifest — a wiring
       # regression that dropped a tool would otherwise still look fine.
-      - name: selftest fails loudly without a key (and lists all six tools)
+      - name: selftest fails loudly without a key (and lists all eight tools)
         run: |
           set +e
           python -m videofetch_mcp.server --selftest > selftest.out 2>&1
@@ -85,4 +85,6 @@ jobs:
           cat selftest.out
           test "$code" -eq 2 || { echo "expected exit 2 with no key, got $code"; exit 1; }
           grep -q "key    : MISSING" selftest.out
-          test "$(grep -c '^  - ' selftest.out)" -eq 6 || { echo "expected 6 tools"; exit 1; }
+          # 工具数变了就同步改这里: 6 → 8 (0.2.0 加了 list_storage / redeliver_download)。
+          # 断言工具数是为了抓"接线回归导致某个工具掉了"—— 别把断言删掉。
+          test "$(grep -c '^  - ' selftest.out)" -eq 8 || { echo "expected 8 tools"; exit 1; }
