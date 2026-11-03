@@ -3,6 +3,18 @@
 All notable changes to `@videofetch/sdk` are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] — 2026-11-04
+
+### Added
+
+- **Queue priority visibility** — `Download.queue_priority` (`0–100`, higher runs
+  sooner), `Download.lane` (`"paid" | "free" | "anonymous"`),
+  `Download.higher_priority_ahead` and `Download.queue_message`
+  (ready-to-display one-liner). All four are present in **every** state — they
+  describe the account, not a queue snapshot. The existing `queue_position` /
+  `ahead_of_you` / `estimated_wait_seconds` stay queued-only.
+- **Retention fields** — `Download.file_expires_at` and `Download.retention_days`.
+
 ## [0.5.0] — 2026-09-26
 
 ### Added

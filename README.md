@@ -89,6 +89,39 @@ webhooks.
 > function — it will burn billed execution time. Instead: create the job, store the
 > id, and let a webhook (`download.completed`) tell you when to fetch the result.
 
+## Queue visibility (v0.6.0+)
+
+Jobs run on a **plan-based priority queue**. Paid plans are claimed before free
+jobs, so a burst of free-tier traffic cannot push paid work to the back. The API
+exposes this so your UI does not have to show a blind spinner.
+
+Every `Download` object carries four queue fields:
+
+| field | type | meaning |
+|---|---|---|
+| `queue_priority` | `int \| null` | 0–100, higher runs sooner. **Present in every state** — it describes the account, not a queue snapshot. |
+| `lane` | `"paid" \| "free" \| "anonymous" \| null` | Which queue lane the job was placed in. |
+| `higher_priority_ahead` | `int \| null` | Queued jobs ahead of this one with a strictly higher priority. Always `0` for top-tier jobs. |
+| `queue_message` | `str \| null` | Ready-to-display one-liner. Use it directly instead of composing your own copy. |
+
+Three older fields are **snapshots** and are only set while `status == "queued"`:
+`queue_position`, `ahead_of_you`, `estimated_wait_seconds`.
+
+```python
+job = client.downloads.create(url=URL, format="720p")
+while job.status == "queued":
+    print(job.queue_message)          # "3 jobs ahead · about 2 min. …"
+    time.sleep(2)
+    job = client.downloads.retrieve(job.id)
+```
+
+> `queue_message` is already human-readable and plan-aware: free-tier jobs get an
+> upgrade hint appended, paid jobs do not. Rendering it as-is keeps your copy in
+> sync with ours.
+
+Retention fields are also available: `file_expires_at` (ISO-8601, when the file
+leaves storage) and `retention_days` (the window applied to this job).
+
 ## Base URL / local development
 
 By default SDKs point at the hosted API. During development you can point them at

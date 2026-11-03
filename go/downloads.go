@@ -171,6 +171,19 @@ type Download struct {
 	QueuePosition        *int `json:"queue_position"`
 	AheadOfYou           *int `json:"ahead_of_you"`
 	EstimatedWaitSeconds *int `json:"estimated_wait_seconds"`
+	// QueuePriority is the scheduling priority (0-100, higher runs sooner)
+	// derived from the plan. Unlike the three fields above it is present in
+	// every state — it describes the account, not a queue snapshot.
+	QueuePriority *int `json:"queue_priority"`
+	// Lane is the queue lane the job was placed in: "paid", "free" or "anonymous".
+	Lane *string `json:"lane"`
+	// HigherPriorityAhead counts queued jobs ahead of this one that have a
+	// strictly higher QueuePriority. Always 0 for top-tier jobs.
+	HigherPriorityAhead *int `json:"higher_priority_ahead"`
+	// QueueMessage is a ready-to-display one-liner, e.g.
+	// "3 jobs ahead · about 2 min. Upgrading moves your jobs to the priority queue."
+	// Use it directly instead of composing your own copy.
+	QueueMessage *string `json:"queue_message"`
 }
 
 // DownloadCreateParams is the POST /v1/downloads body.

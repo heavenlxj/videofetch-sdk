@@ -39,6 +39,25 @@ export interface Download {
   ahead_of_you?: number | null;
   /** rough wait estimate in seconds while status=queued, null otherwise */
   estimated_wait_seconds?: number | null;
+  /**
+   * Scheduling priority 0-100 derived from the plan (higher runs sooner).
+   * Unlike the three fields above this is present in every state — it is a
+   * property of the account, not of a queue snapshot.
+   */
+  queue_priority?: number | null;
+  /** Queue lane the job was placed in: paid, free, or anonymous. */
+  lane?: "paid" | "free" | "anonymous" | null;
+  /**
+   * Queued jobs ahead of this one with a strictly higher queue_priority.
+   * Always 0 for top-tier jobs.
+   */
+  higher_priority_ahead?: number | null;
+  /**
+   * Ready-to-display one-liner, e.g.
+   * "3 jobs ahead · about 2 min. Upgrading moves your jobs to the priority queue."
+   * Use it directly instead of composing your own copy.
+   */
+  queue_message?: string | null;
   title?: string | null;
   video_id?: string | null;
   channel?: string | null;

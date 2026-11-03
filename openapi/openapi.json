@@ -2463,6 +2463,79 @@
             "type": "array",
             "title": "Attempt Details",
             "default": []
+          },
+          "queue_priority": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Priority",
+            "description": "0-100 scheduling priority derived from the plan. Higher runs sooner. Present in every state (it is a property of the account, not of the queue snapshot)."
+          },
+          "lane": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lane",
+            "description": "Queue lane the job was placed in: paid, free, or anonymous."
+          },
+          "higher_priority_ahead": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Higher Priority Ahead",
+            "description": "Number of queued jobs ahead of this one that have a strictly higher queue_priority. Always 0 for top-tier jobs."
+          },
+          "queue_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Message",
+            "description": "Ready-to-display one-line status, e.g. '3 jobs ahead · about 2 min. Upgrading moves your jobs to the priority queue.' Use it directly instead of composing copy."
+          },
+          "file_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Expires At",
+            "description": "When the delivered file is scheduled to be removed from storage (plan retention)."
+          },
+          "retention_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Days",
+            "description": "Retention window applied to this job's file, in days. Null means no automatic expiry."
           }
         },
         "type": "object",

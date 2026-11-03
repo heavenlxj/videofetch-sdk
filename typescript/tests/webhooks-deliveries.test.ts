@@ -158,6 +158,39 @@ describe("new typed fields (v0.3.0 contract)", () => {
     expect(done.queue_position).toBeNull();
   });
 
+  it("Download carries queue priority fields in every state (v0.6.0)", () => {
+    // 2026-11-04: queue_priority / lane / higher_priority_ahead / queue_message
+    // 与前三个不同 —— 它们描述**账号**而不是队列快照，所以终态也存在。
+    const done: Download = {
+      id: "dl_2", status: "completed", url: "https://youtu.be/x", format: "720p",
+      queue_position: null, ahead_of_you: null, estimated_wait_seconds: null,
+      queue_priority: 85, lane: "paid", higher_priority_ahead: 0,
+      queue_message: null,
+    };
+    expect(done.queue_priority).toBe(85);
+    expect(done.lane).toBe("paid");
+    expect(done.higher_priority_ahead).toBe(0);
+
+    // 免费档 + 后面还有更高的优先任务在前面
+    const freeQueued: Download = {
+      id: "dl_3", status: "queued", url: "https://youtu.be/x", format: "360p",
+      queue_position: 5, ahead_of_you: 4, estimated_wait_seconds: 120,
+      queue_priority: 30, lane: "free", higher_priority_ahead: 2,
+      queue_message: "4 jobs ahead · about 2 min. Upgrading moves your jobs to the priority queue.",
+    };
+    expect(freeQueued.queue_priority).toBe(30);
+    expect(freeQueued.higher_priority_ahead).toBe(2);
+    expect(freeQueued.queue_message).toContain("Upgrading");
+  });
+
+  it("Download exposes retention fields (v0.6.0)", () => {
+    const done: Download = {
+      id: "dl_4", status: "completed", url: "https://youtu.be/x", format: "720p",
+      file_expires_at: "2026-12-01T00:00:00Z", retention_days: 30,
+    };
+    expect(done.retention_days).toBe(30);
+  });
+
   it("Usage exposes account-level used_* plus key_used_* fields", () => {
     const usage: Usage = {
       key_id: "key_1", plan: "free", quota_gb: 10, used_bytes: 5_000_000_000,

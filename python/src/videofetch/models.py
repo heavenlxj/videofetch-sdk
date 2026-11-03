@@ -144,6 +144,9 @@ class Download:
     duration_seconds: Optional[float] = None
     size_bytes: Optional[int] = None
     trim: Optional[TrimSpec] = None
+    # Retention — when the delivered file disappears from storage.
+    file_expires_at: Optional[str] = None      # ISO-8601, null = no auto-expiry
+    retention_days: Optional[int] = None
     destination_type: Optional[str] = None     # url|s3|r2|gcs|s3_compatible
     destination_id: Optional[str] = None       # st_… saved connection used by this job
     delivery: Optional[Delivery] = None
@@ -165,6 +168,12 @@ class Download:
     queue_position: Optional[int] = None        # 1 == next to be claimed
     ahead_of_you: Optional[int] = None
     estimated_wait_seconds: Optional[int] = None
+    # ★ 2026-11-02: queue priority — lets paid accounts confirm they're on the
+    # priority lane, and free accounts see that upgrading skips the wait.
+    queue_priority: Optional[int] = None        # 0-100, higher = sooner
+    lane: Optional[str] = None                  # "paid" | "free" | "anonymous"
+    higher_priority_ahead: Optional[int] = None # paid jobs queued ahead of yours
+    queue_message: Optional[str] = None         # ready-to-display one-liner
 
     @property
     def is_terminal(self) -> bool:
@@ -184,6 +193,8 @@ class Download:
             duration_seconds=_as_float(d.get("duration_seconds")),
             size_bytes=_as_int(d.get("size_bytes")),
             trim=TrimSpec.from_dict(d.get("trim")),
+            file_expires_at=d.get("file_expires_at"),
+            retention_days=_as_int(d.get("retention_days")),
             destination_type=d.get("destination_type"), destination_id=d.get("destination_id"),
             delivery=Delivery.from_dict(d.get("delivery")), error=DownloadError.from_dict(d.get("error")),
             download_url=d.get("download_url"),
@@ -200,6 +211,10 @@ class Download:
             queue_position=_as_int(d.get("queue_position")),
             ahead_of_you=_as_int(d.get("ahead_of_you")),
             estimated_wait_seconds=_as_int(d.get("estimated_wait_seconds")),
+            queue_priority=_as_int(d.get("queue_priority")),
+            lane=d.get("lane"),
+            higher_priority_ahead=_as_int(d.get("higher_priority_ahead")),
+            queue_message=d.get("queue_message"),
         )
 
 

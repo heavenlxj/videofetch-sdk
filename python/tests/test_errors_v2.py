@@ -142,5 +142,6 @@ def test_permission_denied_exported_and_subclass():
     assert issubclass(PermissionDeniedError, videofetch.VideoFetchError)
 
 
-def test_version_bumped_to_0_4_0():
-    assert videofetch.__version__ == "0.5.0"
+def test_version_bumped_to_0_6_0():
+    # 2026-11-04: v0.6.0 增加队列优先级 + 留存字段
+    assert videofetch.__version__ == "0.6.0"

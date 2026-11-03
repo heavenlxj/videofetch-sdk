@@ -138,6 +138,50 @@ func TestInfoLookup(t *testing.T) {
 	}
 }
 
+func TestDownloadQueuePriorityFields(t *testing.T) {
+	// 2026-11-04: queue_priority / lane / higher_priority_ahead / queue_message
+	// 是本次 API 新增的字段。Go 的 json.Unmarshal 会**静默丢弃未定义字段**，
+	// 所以必须有测试兜住，否则字段漏掉时不会报错、只会读到 nil。
+	queued := downloadJSON("queued", map[string]any{
+		"queue_priority": 85, "lane": "paid",
+		"higher_priority_ahead": 0,
+		"queue_message":         "1 job ahead · about 1 min.",
+	})
+
+	var dl Download
+	if err := json.Unmarshal(mustJSON(t, queued), &dl); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if dl.QueuePriority == nil || *dl.QueuePriority != 85 {
+		t.Fatalf("queue_priority = %v, want 85", dl.QueuePriority)
+	}
+	if dl.Lane == nil || *dl.Lane != "paid" {
+		t.Fatalf("lane = %v, want paid", dl.Lane)
+	}
+	if dl.HigherPriorityAhead == nil || *dl.HigherPriorityAhead != 0 {
+		t.Fatalf("higher_priority_ahead = %v, want 0", dl.HigherPriorityAhead)
+	}
+	if dl.QueueMessage == nil || *dl.QueueMessage != "1 job ahead · about 1 min." {
+		t.Fatalf("queue_message = %v", dl.QueueMessage)
+	}
+
+	// 非 queued 状态下 queue_priority / lane 仍然存在（它们描述账号，不是快照）
+	done := downloadJSON("completed", map[string]any{
+		"queue_priority": 70, "lane": "free",
+		"queue_position": nil, "ahead_of_you": nil, "estimated_wait_seconds": nil,
+	})
+	var d2 Download
+	if err := json.Unmarshal(mustJSON(t, done), &d2); err != nil {
+		t.Fatalf("unmarshal completed: %v", err)
+	}
+	if d2.QueuePriority == nil || *d2.QueuePriority != 70 {
+		t.Fatalf("completed: queue_priority = %v, want 70 (should survive terminal state)", d2.QueuePriority)
+	}
+	if d2.QueuePosition != nil {
+		t.Fatalf("completed: queue_position = %v, want nil", d2.QueuePosition)
+	}
+}
+
 func TestDownloadQueueFields(t *testing.T) {
 	queued := downloadJSON("queued", map[string]any{
 		"queue_position": 4, "ahead_of_you": 3, "estimated_wait_seconds": 90,
