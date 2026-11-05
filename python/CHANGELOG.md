@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 — 2026-11-05
 
 Fixed
 - **`trim` now accepts a plain dict.** `downloads.create(..., trim={"start": 300, "end": 303})`

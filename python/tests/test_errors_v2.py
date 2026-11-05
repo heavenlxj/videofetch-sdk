@@ -142,6 +142,7 @@ def test_permission_denied_exported_and_subclass():
     assert issubclass(PermissionDeniedError, videofetch.VideoFetchError)
 
 
-def test_version_bumped_to_0_6_0():
-    # 2026-11-04: v0.6.0 增加队列优先级 + 留存字段
-    assert videofetch.__version__ == "0.6.0"
+def test_version_bumped_to_0_6_1():
+    # 2026-11-05: v0.6.1 修复 trim 传 dict 崩溃 (内部模型泄漏成硬性要求)
+    # 每次发版都要改这里 —— 它守着 __version__ 与 pyproject.toml 的一致性
+    assert videofetch.__version__ == "0.6.1"
