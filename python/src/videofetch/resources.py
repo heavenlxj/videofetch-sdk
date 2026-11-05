@@ -112,13 +112,45 @@ def _read_body(resp: httpx.Response) -> object:
         return resp.text
 
 
-def _build_trim(trim: Optional[TrimSpec], trim_start: Optional[float],
+def _coerce_trim(trim: "TrimSpec | dict | None") -> Optional["TrimSpec"]:
+    """把外部传入的 trim 统一成 TrimSpec。
+
+    ★ 2026-11-05 实测缺陷: 旧实现直接调 `trim.to_dict()`, 于是客户按最直觉的
+      写法传 dict 就崩:
+
+          client.downloads.create(..., trim={"start": 300, "end": 303})
+          → AttributeError: 'dict' object has no attribute 'to_dict'
+
+      这是**接口契约和直觉冲突**: 后端 HTTP 接口收的就是 {"start","end"},
+      文档示例也常写成 dict, 客户没有理由知道要先构造 TrimSpec。
+      SDK 应该在这里做宽容转换, 而不是把内部模型泄漏成硬性要求。
+
+    接受: TrimSpec / dict / None。别的类型给出可读的 TypeError,
+    而不是让它在下游变成莫名其妙的 AttributeError。
+    """
+    from .models import TrimSpec as _TrimSpec
+
+    if trim is None:
+        return None
+    if isinstance(trim, _TrimSpec):
+        return trim
+    if isinstance(trim, dict):
+        return _TrimSpec.from_dict(trim)
+    raise TypeError(
+        "trim must be a TrimSpec or a dict like {'start': 300.0, 'end': 303.0}, "
+        f"got {type(trim).__name__}")
+
+
+def _build_trim(trim: "TrimSpec | dict | None", trim_start: Optional[float],
                 trim_end: Optional[float]) -> Optional[dict]:
     """Normalize `trim{start,end}` and the flat `trim_start`/`trim_end` aliases.
 
-    Both spellings are accepted but must not conflict: passing a TrimSpec plus a
+    Both spellings are accepted but must not conflict: passing a trim plus a
     flat value that disagrees raises ValueError (we never silently pick one).
+
+    `trim` accepts either a TrimSpec or a plain dict — see :func:`_coerce_trim`.
     """
+    trim = _coerce_trim(trim)
     if trim is not None and (trim_start is not None or trim_end is not None):
         same = ((trim_start is None or trim_start == trim.start)
                 and (trim_end is None or trim_end == trim.end))
@@ -155,7 +187,7 @@ class DownloadsResource:
         self._client = client
 
     def create(self, url: str, format: str = "720p", *,
-               trim: Optional[TrimSpec] = None,
+               trim: "TrimSpec | dict | None" = None,
                trim_start: Optional[float] = None,
                trim_end: Optional[float] = None,
                destination: Destination = None,
@@ -353,7 +385,7 @@ class AsyncDownloadsResource:
         self._client = client
 
     async def create(self, url: str, format: str = "720p", *,
-                     trim: Optional[TrimSpec] = None,
+                     trim: "TrimSpec | dict | None" = None,
                      trim_start: Optional[float] = None,
                      trim_end: Optional[float] = None,
                      destination: Destination = None,

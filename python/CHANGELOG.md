@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+Fixed
+- **`trim` now accepts a plain dict.** `downloads.create(..., trim={"start": 300, "end": 303})`
+  used to raise `AttributeError: 'dict' object has no attribute 'to_dict'` — the SDK
+  leaked its internal `TrimSpec` model into the public contract, even though the HTTP
+  API itself takes `{"start", "end"}`. All three spellings (`TrimSpec`, dict, and the
+  flat `trim_start`/`trim_end` aliases) are now accepted and normalized to the same
+  request body. Any other type raises a readable `TypeError` instead of a downstream
+  `AttributeError`.
+
 ## 0.6.0 — 2026-11-04
 
 Added

@@ -19,6 +19,8 @@ job = client.downloads.create(
     url="https://www.youtube.com/watch?v=...",
     format="1080p",                 # 144p..2160p | mp3
     trim=videofetch.TrimSpec(start=120, end=420),   # optional clip window
+    # trim={"start": 120, "end": 420},              # equivalent: a plain dict works too
+    # trim_start=120, trim_end=420,                 # equivalent: flat aliases
     # destination="st_9f1c2a34b5d6e7f8",           # optional: your own bucket (see below)
 )
 
