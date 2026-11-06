@@ -3,6 +3,7 @@ name: release-mcp
 on:
   push:
     tags: ["mcp-v*"]
+  workflow_dispatch:
 
 permissions:
   id-token: write

@@ -10,6 +10,7 @@ name: release-ts
 on:
   push:
     tags: ["ts-v*"]
+  workflow_dispatch:
 
 permissions:
   id-token: write      # required for OIDC trusted publishing + provenance
