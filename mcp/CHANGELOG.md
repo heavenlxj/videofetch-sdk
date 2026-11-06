@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 — 2026-11-06
+
+Added
+- **`strategy` parameter on `download_media`** — `"throughput"` (default) or
+  `"success_first"` (serialized per account + auto-retries of transient failures).
+
 ## 0.2.0 — 2026-09-26
 
 Added

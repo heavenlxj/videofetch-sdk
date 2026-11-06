@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "videofetch-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "VideoFetch MCP server — let any AI agent download video/audio straight into your own object storage"
 readme = "README.md"
 requires-python = ">=3.10"

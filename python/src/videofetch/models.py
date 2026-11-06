@@ -157,7 +157,7 @@ class Download:
     processing_time_ms: Optional[int] = None
     cost_usd: float = 0.0
     attempts: int = 0
-    strategy: Optional[str] = None
+    strategy: Optional[str] = None            # execution strategy: throughput | success_first
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     created_at: Optional[str] = None

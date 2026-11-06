@@ -88,7 +88,7 @@ from .webhooks import (  # noqa: F401
     verify_webhook_signature,
 )
 
-__version__ = "0.6.1"
+__version__ = "0.7.0"
 __all__ = [
     "VideoFetch", "AsyncVideoFetch", "DownloadJob",
     "VideoFetchError", "AuthenticationError", "PermissionDeniedError", "QuotaExceededError",

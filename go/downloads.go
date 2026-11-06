@@ -158,8 +158,8 @@ type Download struct {
 	StorageKey           *string           `json:"storage_key"`
 	ProcessingTimeMS     *int64            `json:"processing_time_ms"`
 	CostUSD              float64           `json:"cost_usd"`
-	Attempts             int               `json:"attempts"`
 	Strategy             *string           `json:"strategy"`
+	Attempts             int               `json:"attempts"`
 	ErrorCode            *string           `json:"error_code"`
 	ErrorMessage         *string           `json:"error_message"`
 	CreatedAt            *string           `json:"created_at"`
@@ -193,6 +193,10 @@ type DownloadCreateParams struct {
 	Trim        *TrimSpec        `json:"trim,omitempty"`
 	Destination *DestinationSpec `json:"destination,omitempty"`
 	WebhookURL  string           `json:"webhook_url,omitempty"`
+	// Strategy is the execution strategy: "throughput" (default) or
+	// "success_first" (serialized per account + automatic retries of
+	// transient network failures — trades waiting time for success rate).
+	Strategy    string           `json:"strategy,omitempty"`
 }
 
 // DownloadList is the GET /v1/downloads response.

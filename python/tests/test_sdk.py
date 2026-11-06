@@ -43,6 +43,26 @@ def test_create_returns_queued_job():
     assert job.status == "queued"
 
 
+def test_create_passes_strategy():
+    """strategy 参数必须进入请求体 (throughput 默认不传, success_first 显式传)。"""
+    import json as _json
+
+    seen: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        payload = _json.loads(req.read().decode())
+        seen["strategy"] = payload.get("strategy")
+        return httpx.Response(202, json=_download_json("queued"))
+
+    c = _client(handler)
+    c.downloads.create("https://www.youtube.com/watch?v=x", strategy="success_first")
+    assert seen["strategy"] == "success_first"
+
+    c = _client(handler)
+    c.downloads.create("https://www.youtube.com/watch?v=x")
+    assert seen["strategy"] is None, "默认策略不写进请求体"
+
+
 def test_wait_polls_to_completed():
     calls = {"n": 0}
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0 — 2026-11-06
+
+Added
+- **Download strategies** — `downloads.create(..., strategy="throughput" | "success_first")`
+  and `Download.strategy`. `"throughput"` (default) keeps current behavior;
+  `"success_first"` serializes jobs per account, adds egress candidates and
+  auto-retries transient network failures in exchange for waiting time. Billing
+  and queue priority are unaffected.
+
 ## 0.6.1 — 2026-11-05
 
 Fixed

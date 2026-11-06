@@ -192,12 +192,22 @@ class DownloadsResource:
                trim_end: Optional[float] = None,
                destination: Destination = None,
                webhook_url: Optional[str] = None,
+               strategy: Optional[str] = None,
                **extra: dict) -> DownloadJob:
         """Create a download job. Returns immediately with status 'queued'.
 
         Clip window may be given either as ``trim=TrimSpec(start, end)`` or via
         the flat aliases ``trim_start`` / ``trim_end``. The two spellings are
         mutually exclusive in value — a conflict raises ValueError.
+
+        ``strategy`` picks the execution strategy (default ``"throughput"``):
+
+        * ``"throughput"`` — current behavior: jobs run as fast as the pool allows.
+        * ``"success_first"`` — success-rate first: your jobs are serialized per
+          account (one at a time, spaced ~30s), get more egress candidates per job,
+          and jobs that fail on transient network issues automatically re-enter the
+          queue (up to 2 extra executions) instead of failing immediately. Billing
+          and queue priority are unaffected.
 
         ``destination`` decides where the finished file lands:
 
@@ -223,6 +233,8 @@ class DownloadsResource:
             body["destination"] = _destination(destination)
         if webhook_url:
             body["webhook_url"] = webhook_url
+        if strategy:
+            body["strategy"] = strategy
         data = self._client.request("POST", "/v1/downloads", json_body=body)
         return DownloadJob(self._client, Download.from_dict(data))
 

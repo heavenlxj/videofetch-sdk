@@ -6,6 +6,9 @@ export type DestinationType = "url" | "s3" | "r2" | "gcs" | "s3_compatible";
 export type StorageProvider = Exclude<DestinationType, "url">;
 export type DownloadStrategy = "direct" | "relay" | "relay_secondary";
 
+/** Execution strategy for a job — pick speed vs success rate. */
+export type JobStrategy = "throughput" | "success_first";
+
 export interface TrimSpec {
   /** clip start, seconds (float ok) */
   start?: number | null;
@@ -81,7 +84,7 @@ export interface Download {
   processing_time_ms?: number | null;
   cost_usd?: number;
   attempts?: number;
-  strategy?: DownloadStrategy | null;
+  strategy?: JobStrategy | null;
   error_code?: string | null;
   error_message?: string | null;
   created_at?: string | null;
@@ -139,6 +142,10 @@ export interface DownloadCreateParams {
   destination?: DestinationInput;
   /** receive download.* events for this job */
   webhook_url?: string;
+  /** execution strategy: `throughput` (default) runs as fast as the pool allows;
+   *  `success_first` serializes your jobs per account and retries transient
+   *  network failures automatically — trades waiting time for success rate. */
+  strategy?: JobStrategy;
 }
 
 /** Platform-hosted delivery: the platform keeps the file and returns a presigned

@@ -3,6 +3,16 @@
 All notable changes to `@videofetch/sdk` are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] — 2026-11-06
+
+### Added
+
+- **Download strategies** — `strategy: "throughput" | "success_first"` on
+  `DownloadCreateParams` and the `Download` object. `"throughput"` (default)
+  keeps current behavior; `"success_first"` serializes jobs per account, adds
+  egress candidates and auto-retries transient network failures in exchange for
+  waiting time. Billing and queue priority are unaffected.
+
 ## [0.6.0] — 2026-11-04
 
 ### Added

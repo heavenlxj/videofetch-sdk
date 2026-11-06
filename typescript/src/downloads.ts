@@ -224,6 +224,7 @@ export class DownloadsResource {
     if (params.trim) body.trim = params.trim;
     if (params.destination) body.destination = normalizeDestination(params.destination);
     if (params.webhook_url) body.webhook_url = params.webhook_url;
+    if (params.strategy) body.strategy = params.strategy;
 
     const data = await this.client.request<Download>("POST", "/v1/downloads", { json: body });
     return new DownloadJob(this.client, data);

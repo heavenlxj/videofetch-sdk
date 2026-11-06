@@ -46,7 +46,7 @@ if TYPE_CHECKING:  # 只为类型标注, 运行时才 import (缺依赖时也能
     from videofetch import VideoFetch
 
 SERVER_NAME = "videofetch"
-SERVER_VERSION = "0.2.0"
+SERVER_VERSION = "0.3.0"
 
 Format = Literal["144p", "240p", "360p", "480p", "720p", "1080p", "1440p", "2160p", "mp3"]
 
@@ -201,6 +201,7 @@ def download_media(
     end: Annotated[Optional[float], Field(description="Clip window end in seconds (optional). Must be greater than start.")] = None,
     destination_id: Annotated[Optional[str], Field(description="Storage id (st_…) of a bucket the user connected in the VideoFetch dashboard — see list_storage. Omit to use the account's default storage (or a platform link if none); pass \"url\" to force a temporary platform link.")] = None,
     webhook_url: Annotated[Optional[str], Field(description="HTTPS URL to be notified at when the job finishes (avoids polling entirely).")] = None,
+    strategy: Annotated[Optional[str], Field(description='Execution strategy: "throughput" (default, fast) or "success_first" (serialized + auto-retries of transient failures — slower but more reliable).')] = None,
     save_to: Annotated[Optional[str], Field(description="Local file path (or directory) to write the artifact to once it completes. Must be inside the server's allowed output directory.")] = None,
     wait_seconds: Annotated[int, Field(description="How long this call may block waiting for the job (0 = return immediately with the job id). Capped by the server config.")] = 120,
 ) -> dict:
@@ -237,6 +238,7 @@ def download_media(
         # 字符串简写 "st_…" / "url": 真实 provider / 凭据由后端从库里取, 模型永远碰不到凭据
         destination=destination_id.strip() if destination_id and destination_id.strip() else None,
         webhook_url=webhook_url,
+        strategy=strategy,
     )
 
     dl = _wait_bounded(job, budget)
